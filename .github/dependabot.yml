@@ -4,6 +4,22 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      tanstack-framework:
+        patterns:
+          - "@tanstack/react-start"
+          - "@tanstack/react-router"
+          - "@tanstack/router-plugin"
+      typescript-tooling:
+        patterns:
+          - "typescript"
+          - "typescript-eslint"
+          - "@typescript-eslint/*"
+    ignore:
+      # typescript-eslint 8.72 supports TypeScript >=4.8.4 <6.1.0.
+      # Review this bound when upgrading the parser; do not bypass npm peers.
+      - dependency-name: typescript
+        versions: [">=6.1.0"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

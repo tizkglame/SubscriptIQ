@@ -54,6 +54,7 @@ Payment recording is an offline ledger entry by staff. This app does not charge 
 ## Verification
 
 ```sh
+npm run check:deps
 npm run lint
 npm run typecheck
 npm test
@@ -68,6 +69,12 @@ TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm run t
 ```
 
 The tests create and drop a uniquely named database, install a minimal Supabase Auth test harness, and exercise real migrations, role policies, rollback, billing and concurrency. Never point them at a production server. CI runs these checks against PostgreSQL 17. See [AUDIT.md](AUDIT.md) for findings and verification limits.
+
+## Dependency maintenance
+
+Update `@tanstack/react-start`, `@tanstack/react-router` and `@tanstack/router-plugin` together and regenerate both lockfiles. TanStack Start pins a router version internally; the app and framework must resolve the same router copy so they share React contexts. `npm run check:deps` verifies that requirement after a clean install, and CI runs it before the application checks.
+
+The TypeScript toolchain currently uses the supported 6.0.x line. `typescript-eslint@8.72` requires TypeScript `>=4.8.4 <6.1.0`, so Dependabot groups the compiler/parser updates and excludes TypeScript 6.1 and newer until parser support is reviewed. TypeScript 7 cannot currently be installed with the existing parser peer requirements. Keep npm peer checks enabled when updating dependencies.
 
 ## Lovable
 
