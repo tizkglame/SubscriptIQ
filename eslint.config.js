@@ -32,9 +32,32 @@ export default tseslint.config(
           ],
         },
       ],
-      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
+      "react-refresh/only-export-components": [
+        "warn",
+        {
+          allowConstantExport: true,
+          // Shared UI modules intentionally export their styling and context helpers.
+          allowExportNames: [
+            "usePaged",
+            "METHODS",
+            "badgeVariants",
+            "buttonVariants",
+            "useFormField",
+            "navigationMenuTriggerStyle",
+            "useSidebar",
+            "toggleVariants",
+          ],
+        },
+      ],
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
   eslintPluginPrettier,
+  // Generated integration sources retain the upstream generator's formatting.
+  {
+    files: ["src/integrations/supabase/**/*.ts", "src/routeTree.gen.ts"],
+    rules: { "prettier/prettier": "off" },
+  },
+  // TanStack's router plugin handles HMR for file routes, which export Route metadata.
+  { files: ["src/routes/**/*.tsx"], rules: { "react-refresh/only-export-components": "off" } },
 );

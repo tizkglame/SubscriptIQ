@@ -1,8 +1,23 @@
 import { useCallback, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { CreditCard, Wallet, ArrowUpRight } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PageHeader, Panel, SearchBox, usePaged, Pager, EmptyState, Loading, tableHead } from "@/components/common";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  PageHeader,
+  Panel,
+  SearchBox,
+  usePaged,
+  Pager,
+  EmptyState,
+  Loading,
+  tableHead,
+} from "@/components/common";
 import { useList } from "@/lib/data";
 import { guard } from "@/lib/auth";
 import { fmtDate, money } from "@/lib/format";
@@ -58,7 +73,7 @@ function PaymentsPage() {
         Boolean(p.notes?.toLowerCase().includes(q));
       return matchesMethod && matchesQuery;
     },
-    [method]
+    [method],
   );
 
   const t = usePaged(data, filter);
@@ -135,9 +150,7 @@ function PaymentsPage() {
               <tbody>
                 {t.rows.map((p) => (
                   <tr key={p.id} className="border-t hover:bg-muted/40">
-                    <td className="px-4 py-3 font-medium text-foreground">
-                      {fmtDate(p.paid_on)}
-                    </td>
+                    <td className="px-4 py-3 font-medium text-foreground">{fmtDate(p.paid_on)}</td>
                     <td className="px-4 py-3 font-medium text-foreground">
                       {p.invoices?.customers?.name ?? "—"}
                     </td>

@@ -2,8 +2,24 @@ import { useCallback, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PageHeader, Panel, SearchBox, usePaged, Pager, EmptyState, Loading, StatusBadge, tableHead } from "@/components/common";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  PageHeader,
+  Panel,
+  SearchBox,
+  usePaged,
+  Pager,
+  EmptyState,
+  Loading,
+  StatusBadge,
+  tableHead,
+} from "@/components/common";
 import { PaymentDialog } from "@/components/payment-dialog";
 import { RunBillingButton } from "@/routes/_authenticated/subscriptions.index";
 import { useList } from "@/lib/data";
@@ -48,12 +64,16 @@ const STATUSES = [
 function InvoicesPage() {
   const { data, isLoading } = useList<InvoiceRow>("invoices", INVOICE_SELECT, "issue_date", false);
   const [status, setStatus] = useState("all");
-  const [activePaymentInvoice, setActivePaymentInvoice] = useState<{ id: string; number: string; balance: number } | null>(null);
+  const [activePaymentInvoice, setActivePaymentInvoice] = useState<{
+    id: string;
+    number: string;
+    balance: number;
+  } | null>(null);
 
   const filter = useCallback(
     (inv: InvoiceRow, q: string) => {
       const eff = effectiveInvoiceStatus(inv.status, inv.due_date);
-      const matchesStatus = status === "all" || eff === status || inv.status === status;
+      const matchesStatus = status === "all" || eff === status;
       const matchesQuery =
         !q ||
         inv.number.toLowerCase().includes(q) ||
@@ -61,7 +81,7 @@ function InvoicesPage() {
         Boolean(inv.subscriptions?.number?.toLowerCase().includes(q));
       return matchesStatus && matchesQuery;
     },
-    [status]
+    [status],
   );
 
   const t = usePaged(data, filter);
@@ -76,7 +96,11 @@ function InvoicesPage() {
 
       <Panel>
         <div className="flex flex-col gap-3 p-4 sm:flex-row">
-          <SearchBox value={t.q} onChange={t.setQ} placeholder="Search number, customer, subscription" />
+          <SearchBox
+            value={t.q}
+            onChange={t.setQ}
+            placeholder="Search number, customer, subscription"
+          />
           <Select
             value={status}
             onValueChange={(v) => {

@@ -6,11 +6,34 @@ import { ShieldCheck, UserPlus, Info, Loader2, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { PageHeader, Panel, SearchBox, usePaged, Pager, EmptyState, Loading, Field, tableHead } from "@/components/common";
-import { createStaff } from "@/lib/demo.functions";
-import { useInvalidate, db } from "@/lib/data";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  PageHeader,
+  Panel,
+  SearchBox,
+  usePaged,
+  Pager,
+  EmptyState,
+  Loading,
+  Field,
+  tableHead,
+} from "@/components/common";
+import { createStaff } from "@/lib/staff.functions";
+import { useInvalidate, db, readAll } from "@/lib/data";
 import { guard } from "@/lib/auth";
 import { fmtDate, errMsg } from "@/lib/format";
 
@@ -34,17 +57,15 @@ function StaffPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["staff-team-list"],
+    throwOnError: true,
     queryFn: async () => {
       const [profRes, roleRes] = await Promise.all([
-        db.from("profiles").select("*"),
-        db.from("user_roles").select("*"),
+        readAll("profiles"),
+        readAll("user_roles", "*", "id"),
       ]);
 
-      if (profRes.error) throw profRes.error;
-      if (roleRes.error) throw roleRes.error;
-
-      const profiles = profRes.data ?? [];
-      const roles = roleRes.data ?? [];
+      const profiles = profRes;
+      const roles = roleRes;
 
       const list: TeamMember[] = profiles.map(
         (p: { id: string; email: string; full_name: string; created_at: string }) => {
@@ -53,12 +74,12 @@ function StaffPage() {
             .map((r: { role: string }) => r.role);
           return {
             id: p.id,
-            email: p.email,
+            email: p.email ?? "",
             fullName: p.full_name || p.email?.split("@")[0] || "User",
             roles: userRoles.length > 0 ? userRoles : ["customer"],
             createdAt: p.created_at,
           };
-        }
+        },
       );
 
       return list;
@@ -79,12 +100,10 @@ function StaffPage() {
     (m: TeamMember, q: string) => {
       const matchesRole = roleFilter === "all" || m.roles.includes(roleFilter);
       const matchesQuery =
-        !q ||
-        m.fullName.toLowerCase().includes(q) ||
-        m.email.toLowerCase().includes(q);
+        !q || m.fullName.toLowerCase().includes(q) || m.email.toLowerCase().includes(q);
       return matchesRole && matchesQuery;
     },
-    [roleFilter]
+    [roleFilter],
   );
 
   const t = usePaged(data, filter);
@@ -114,7 +133,10 @@ function StaffPage() {
       setForm({ fullName: "", email: "", password: "", role: "staff" });
     } catch (e) {
       const msg = errMsg(e);
-      if (msg.includes("SUPABASE_SERVICE_ROLE_KEY") || msg.includes("Missing Supabase environment")) {
+      if (
+        msg.includes("SUPABASE_SERVICE_ROLE_KEY") ||
+        msg.includes("Missing Supabase environment")
+      ) {
         toast.error("Service role key missing", {
           description:
             "Automated account creation requires SUPABASE_SERVICE_ROLE_KEY in .env. You can add users directly via the Supabase Auth Dashboard.",
@@ -142,11 +164,7 @@ function StaffPage() {
 
       <Panel>
         <div className="flex flex-col gap-3 p-4 sm:flex-row">
-          <SearchBox
-            value={t.q}
-            onChange={t.setQ}
-            placeholder="Search team member name or email"
-          />
+          <SearchBox value={t.q} onChange={t.setQ} placeholder="Search team member name or email" />
           <Select
             value={roleFilter}
             onValueChange={(v) => {
@@ -187,9 +205,7 @@ function StaffPage() {
               <tbody>
                 {t.rows.map((m) => (
                   <tr key={m.id} className="border-t hover:bg-muted/40">
-                    <td className="px-4 py-3 font-medium text-foreground">
-                      {m.fullName}
-                    </td>
+                    <td className="px-4 py-3 font-medium text-foreground">{m.fullName}</td>
                     <td className="px-4 py-3 text-muted-foreground">{m.email}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -200,8 +216,8 @@ function StaffPage() {
                               r === "admin"
                                 ? "bg-primary/10 text-primary"
                                 : r === "staff"
-                                ? "bg-info/15 text-info"
-                                : "bg-muted text-muted-foreground"
+                                  ? "bg-info/15 text-info"
+                                  : "bg-muted text-muted-foreground"
                             }`}
                           >
                             {r}
@@ -229,23 +245,6 @@ function StaffPage() {
               Create an administrative or operational staff login.
             </DialogDescription>
           </DialogHeader>
-
-          {/* Informational Callout regarding Service Role Key */}
-          <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
-            <div className="flex items-start gap-2">
-              <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-              <div>
-                <span className="font-semibold text-foreground">
-                  Backend Configuration Note:
-                </span>{" "}
-                Direct account provisioning without email verification requires{" "}
-                <code className="rounded bg-muted px-1 font-mono text-[11px]">
-                  SUPABASE_SERVICE_ROLE_KEY
-                </code>{" "}
-                in your server environment. You can also provision accounts directly in the Supabase Dashboard.
-              </div>
-            </div>
-          </div>
 
           <form onSubmit={handleCreate} className="grid gap-4 pt-1">
             <Field label="Full Name *">
@@ -281,9 +280,7 @@ function StaffPage() {
             <Field label="Role *">
               <Select
                 value={form.role}
-                onValueChange={(v) =>
-                  setForm({ ...form, role: v as "staff" | "admin" })
-                }
+                onValueChange={(v) => setForm({ ...form, role: v as "staff" | "admin" })}
               >
                 <SelectTrigger>
                   <SelectValue />
