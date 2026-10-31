@@ -22,7 +22,8 @@ import {
 } from "recharts";
 import { PageHeader, Panel, Loading, StatusBadge } from "@/components/common";
 import { RunBillingButton } from "@/routes/_authenticated/subscriptions.index";
-import { db } from "@/lib/data";
+import { db, readAll } from "@/lib/data";
+import { revenueTrend } from "@/lib/metrics";
 import { guard } from "@/lib/auth";
 import {
   calcTotals,
@@ -32,6 +33,7 @@ import {
   monthlyFactor,
   outstanding,
   type BillingPeriod,
+  todayISO,
 } from "@/lib/format";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -47,6 +49,7 @@ type DashboardData = {
     number: string;
     status: string;
     start_date: string;
+    expiry_date: string | null;
     tax_rate: number;
     plans: { name: string; billing_period: string } | null;
     discounts: { type: "fixed" | "percentage"; value: number } | null;
@@ -60,7 +63,7 @@ type DashboardData = {
     total: number;
     status: string;
     customers: { name: string } | null;
-    payments: { amount: number }[];
+    payments: { amount: number; paid_on: string }[];
   }[];
   recentPayments: {
     id: string;
@@ -79,35 +82,28 @@ function DashboardPage() {
     queryKey: ["dashboard-metrics"],
     queryFn: async () => {
       const [custRes, subRes, invRes, payRes] = await Promise.all([
-        db.from("customers").select("id, name, created_at"),
-        db
-          .from("subscriptions")
-          .select(
-            "id, number, status, start_date, tax_rate, plans(name, billing_period), discounts(type, value), subscription_lines(quantity, unit_price)"
-          ),
-        db
-          .from("invoices")
-          .select(
-            "id, number, issue_date, due_date, total, status, customers(name), payments(amount)"
-          ),
+        readAll("customers", "id, name, created_at"),
+        readAll(
+          "subscriptions",
+          "id, number, status, start_date, expiry_date, tax_rate, plans(name, billing_period), discounts(*), subscription_lines(quantity, unit_price)",
+        ),
+        readAll(
+          "invoices",
+          "id, number, issue_date, due_date, total, status, customers(name), payments(amount, paid_on)",
+        ),
         db
           .from("payments")
-          .select(
-            "id, amount, paid_on, method, invoices(number, customers(name))"
-          )
+          .select("id, amount, paid_on, method, invoices(number, customers(name))")
           .order("paid_on", { ascending: false })
           .limit(5),
       ]);
 
-      if (custRes.error) throw custRes.error;
-      if (subRes.error) throw subRes.error;
-      if (invRes.error) throw invRes.error;
       if (payRes.error) throw payRes.error;
 
       return {
-        customers: custRes.data ?? [],
-        subscriptions: subRes.data ?? [],
-        invoices: invRes.data ?? [],
+        customers: custRes,
+        subscriptions: subRes,
+        invoices: invRes,
         recentPayments: payRes.data ?? [],
       } as DashboardData;
     },
@@ -117,15 +113,20 @@ function DashboardPage() {
     if (!data) return null;
 
     const totalCustomers = data.customers.length;
-    const activeSubs = data.subscriptions.filter((s) => s.status === "active");
+    const activeSubs = data.subscriptions.filter(
+      (s) =>
+        s.status === "active" &&
+        s.start_date <= todayISO() &&
+        (!s.expiry_date || s.expiry_date >= todayISO()),
+    );
     const activeSubCount = activeSubs.length;
 
     // Monthly Recurring Revenue calculation
     const mrr = activeSubs.reduce((acc, sub) => {
       const lines = sub.subscription_lines ?? [];
-      const taxRate = Number(sub.tax_rate ?? 0);
+
       const disc = sub.discounts ?? null;
-      const { total } = calcTotals(lines, taxRate, disc);
+      const { total } = calcTotals(lines, 0, disc);
       const period = (sub.plans?.billing_period as BillingPeriod) ?? "monthly";
       const factor = monthlyFactor[period] ?? 1;
       return acc + total * factor;
@@ -134,55 +135,20 @@ function DashboardPage() {
     const arr = mrr * 12;
 
     const totalInvoices = data.invoices.length;
-    const totalInvoiced = data.invoices.reduce(
-      (acc, inv) => acc + Number(inv.total),
-      0
-    );
+    const totalInvoiced = data.invoices
+      .filter((inv) => !["cancelled", "draft"].includes(inv.status))
+      .reduce((acc, inv) => acc + Number(inv.total), 0);
 
     // Outstanding balance across uncancelled invoices
     const totalOutstanding = data.invoices
-      .filter((inv) => inv.status !== "cancelled")
+      .filter((inv) => !["cancelled", "draft"].includes(inv.status))
       .reduce((acc, inv) => acc + outstanding(inv.total, inv.payments ?? []), 0);
 
     const overdueCount = data.invoices.filter(
-      (inv) => effectiveInvoiceStatus(inv.status, inv.due_date) === "overdue"
+      (inv) => effectiveInvoiceStatus(inv.status, inv.due_date) === "overdue",
     ).length;
 
-    // Monthly Invoiced vs Collected
-    const chartMap = new Map<
-      string,
-      { monthKey: string; month: string; invoiced: number; collected: number }
-    >();
-
-    for (const inv of data.invoices) {
-      if (!inv.issue_date) continue;
-      const monthKey = inv.issue_date.slice(0, 7);
-      if (!chartMap.has(monthKey)) {
-        const [y, m] = monthKey.split("-");
-        const d = new Date(Number(y), Number(m) - 1, 1);
-        const label = d.toLocaleDateString("en-US", {
-          month: "short",
-          year: "2-digit",
-        });
-        chartMap.set(monthKey, {
-          monthKey,
-          month: label,
-          invoiced: 0,
-          collected: 0,
-        });
-      }
-      const entry = chartMap.get(monthKey)!;
-      entry.invoiced += Math.round(Number(inv.total));
-      const paidOnInv = (inv.payments ?? []).reduce(
-        (s, p) => s + Number(p.amount),
-        0
-      );
-      entry.collected += Math.round(paidOnInv);
-    }
-
-    const chartData = Array.from(chartMap.values())
-      .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
-      .slice(-6);
+    const chartData = revenueTrend(data.invoices);
 
     const recentInvoices = [...data.invoices]
       .sort((a, b) => b.issue_date.localeCompare(a.issue_date))
@@ -224,12 +190,8 @@ function DashboardPage() {
             <span className="text-xs font-medium uppercase tracking-wide">MRR</span>
             <TrendingUp className="h-4 w-4 text-primary" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-foreground">
-            {money(metrics.mrr)}
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            ARR: {money(metrics.arr)}
-          </div>
+          <div className="mt-2 text-2xl font-bold text-foreground">{money(metrics.mrr)}</div>
+          <div className="mt-1 text-xs text-muted-foreground">ARR: {money(metrics.arr)}</div>
         </Panel>
 
         <Panel className="p-4">
@@ -237,9 +199,7 @@ function DashboardPage() {
             <span className="text-xs font-medium uppercase tracking-wide">Active Subs</span>
             <Repeat className="h-4 w-4 text-success" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-foreground">
-            {metrics.activeSubCount}
-          </div>
+          <div className="mt-2 text-2xl font-bold text-foreground">{metrics.activeSubCount}</div>
           <div className="mt-1 text-xs text-muted-foreground">
             {metrics.totalSubs} total subscriptions
           </div>
@@ -250,12 +210,8 @@ function DashboardPage() {
             <span className="text-xs font-medium uppercase tracking-wide">Customers</span>
             <Users className="h-4 w-4 text-info" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-foreground">
-            {metrics.totalCustomers}
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            Subscriber accounts
-          </div>
+          <div className="mt-2 text-2xl font-bold text-foreground">{metrics.totalCustomers}</div>
+          <div className="mt-1 text-xs text-muted-foreground">Subscriber accounts</div>
         </Panel>
 
         <Panel className="p-4">
@@ -263,9 +219,7 @@ function DashboardPage() {
             <span className="text-xs font-medium uppercase tracking-wide">Total Invoices</span>
             <FileText className="h-4 w-4 text-muted-foreground" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-foreground">
-            {metrics.totalInvoices}
-          </div>
+          <div className="mt-2 text-2xl font-bold text-foreground">{metrics.totalInvoices}</div>
           <div className="mt-1 text-xs text-muted-foreground truncate">
             {money(metrics.totalInvoiced)} billed
           </div>
@@ -321,12 +275,7 @@ function DashboardPage() {
                 margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.2} />
-                <XAxis
-                  dataKey="month"
-                  tickLine={false}
-                  axisLine={false}
-                  fontSize={12}
-                />
+                <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={12} />
                 <YAxis
                   tickLine={false}
                   axisLine={false}
@@ -402,9 +351,7 @@ function DashboardPage() {
                       <span>{fmtDate(p.paid_on)}</span>
                     </div>
                   </div>
-                  <div className="text-right font-semibold text-success">
-                    +{money(p.amount)}
-                  </div>
+                  <div className="text-right font-semibold text-success">+{money(p.amount)}</div>
                 </div>
               ))
             )}
@@ -453,22 +400,14 @@ function DashboardPage() {
                       {inv.number}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-foreground">
-                    {inv.customers?.name ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {fmtDate(inv.issue_date)}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {fmtDate(inv.due_date)}
-                  </td>
+                  <td className="px-4 py-3 text-foreground">{inv.customers?.name ?? "—"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{fmtDate(inv.issue_date)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{fmtDate(inv.due_date)}</td>
                   <td className="px-4 py-3 text-right font-medium text-foreground">
                     {money(inv.total)}
                   </td>
                   <td className="px-4 py-3">
-                    <StatusBadge
-                      status={effectiveInvoiceStatus(inv.status, inv.due_date)}
-                    />
+                    <StatusBadge status={effectiveInvoiceStatus(inv.status, inv.due_date)} />
                   </td>
                 </tr>
               ))}

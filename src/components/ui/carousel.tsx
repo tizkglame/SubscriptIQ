@@ -95,6 +95,8 @@ const Carousel = React.forwardRef<
       return;
     }
 
+    // Embla's initial selection is an external widget snapshot.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     onSelect(api);
     api.on("reInit", onSelect);
     api.on("select", onSelect);

@@ -40,6 +40,24 @@ function readBrokerReply(data: unknown, requestId: string): BrokerReply | null {
  */
 export function brokeredPreviewStorage(): PreviewAuthStorage | undefined {
   if (typeof window === 'undefined') return undefined;
+  // Private browsing and third-party frames can deny localStorage entirely.
+  // Keep a session in memory while still allowing the editor broker to work.
+  const memory = new Map<string, string>();
+  let denied = false;
+  const storage = {
+    getItem(key: string): string | null {
+      if (!denied) { try { const value = window.localStorage.getItem(key); if (value !== null) memory.set(key, value); else memory.delete(key); return value; } catch { denied = true; } }
+      return memory.get(key) ?? null;
+    },
+    setItem(key: string, value: string): void {
+      memory.set(key, value);
+      if (!denied) { try { window.localStorage.setItem(key, value); } catch { denied = true; } }
+    },
+    removeItem(key: string): void {
+      memory.delete(key);
+      if (!denied) { try { window.localStorage.removeItem(key); } catch { denied = true; } }
+    },
+  };
   const host = location.hostname;
   const PREVIEW_ZONES = ['lovableproject.com', 'lovableproject-dev.com', 'lovable.app', 'gpt-eng.com', 'gptengineer.run'];
   const onPreviewZone = PREVIEW_ZONES.some((z) => host === z || host.endsWith('.' + z));
@@ -54,7 +72,7 @@ export function brokeredPreviewStorage(): PreviewAuthStorage | undefined {
   // detached frame has no parent and not every browser implements ancestorOrigins.
   const parentWindow = window.parent as Window | null;
   const framed = parentWindow !== null && parentWindow !== window;
-  if (!projectId || !framed) return localStorage;
+  if (!projectId || !framed) return storage;
 
   // Post only to the real editor ancestor, validated as a Lovable origin, so the
   // session token can never reach an untrusted embedder.
@@ -82,7 +100,7 @@ export function brokeredPreviewStorage(): PreviewAuthStorage | undefined {
         resolve(reply);
       };
       const onMessage = (e: MessageEvent<unknown>) => {
-        if (!editorOrigins.includes(e.origin)) return;
+        if (e.source !== parentWindow || !editorOrigins.includes(e.origin)) return;
         const reply = readBrokerReply(e.data, requestId);
         if (reply) finish(reply);
       };
@@ -98,7 +116,7 @@ export function brokeredPreviewStorage(): PreviewAuthStorage | undefined {
   let firstGet = true;
   const RETRY_DELAY = 250;
   // Blocked third-party storage throws here; seeding must not break broker reads.
-  const readLocal = (key: string): string | null | undefined => { try { return localStorage.getItem(key); } catch { return undefined; } };
+  const readLocal = (key: string): string | null | undefined => { try { return storage.getItem(key); } catch { return undefined; } };
 
   return {
     getItem: async (key) => {
@@ -114,29 +132,29 @@ export function brokeredPreviewStorage(): PreviewAuthStorage | undefined {
       // the broker later goes silent. A null value means never-synced -> keep local.
       if (res?.ok && res.value !== null) {
         if (res.value === '') {
-          if (local !== undefined && readLocal(key) === local) localStorage.removeItem(key);
+          if (local !== undefined && readLocal(key) === local) storage.removeItem(key);
           return null;
         }
         // Seed this origin so a new tab, whose editor holds no session, stays signed in.
         if (local === null && readLocal(key) === null) {
-          try { localStorage.setItem(key, res.value); } catch { /* storage full: still return the editor's session */ }
+          try { storage.setItem(key, res.value); } catch { /* storage full: still return the editor's session */ }
         }
         return res.value;
       }
-      return localStorage.getItem(key);
+      return storage.getItem(key);
     },
     setItem: (key, value) => {
-      localStorage.setItem(key, value);
+      storage.setItem(key, value);
       return request('lovable-preview-auth:set', key, value).then((res) => {
-        if (res?.ok && res.value !== null && localStorage.getItem(key) === value) {
-          if (res.value === '') localStorage.removeItem(key);
-          else localStorage.setItem(key, res.value);
+        if (res?.ok && res.value !== null && storage.getItem(key) === value) {
+          if (res.value === '') storage.removeItem(key);
+          else storage.setItem(key, res.value);
         }
       });
     },
     removeItem: (key) => {
       const local = readLocal(key);
-      localStorage.removeItem(key);
+      storage.removeItem(key);
       return request('lovable-preview-auth:remove', key, local ?? undefined).then(() => {});
     },
   };

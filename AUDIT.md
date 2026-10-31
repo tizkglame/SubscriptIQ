@@ -1,0 +1,38 @@
+# Repository audit — 2026-10-31
+
+Baseline: `c778e5de63f570823e6e0433e001b874e4e4c522` on `main`. Reviewed application routes and shared components, authentication/server functions, Supabase integration and policies, SQL billing/payment logic, dependencies, build tooling, tests and setup documentation. The repository had no open GitHub issues at audit time.
+
+## Findings fixed
+
+| Priority | Finding | Resolution |
+| --- | --- | --- |
+| P1 | Unauthenticated demo provisioning could create known-password privileged users. Public demo sign-in exposed shared accounts. | Removed the provisioning function and shared credential UI. Migration removes roles and customer links for the three known demo identities, covering existing sessions. |
+| P1 | Authenticated customers could select internal product cost prices and unrelated catalog rows. | Column privileges hide costs; a staff-authorized RPC serves the operational catalog. Catalog RLS limits customers to their subscriptions. |
+| P1 | Independent subscription writes could leave an orphan header or delete old lines before an insertion failed. Staff could not replace lines because direct deletion was admin-only. | Authenticated staff RPC validates and saves headers/lines atomically. Direct composite-table writes are revoked. |
+| P1 | Product/variant saves could partially commit, and staff could not remove variants. | Staff RPC validates ownership, replaces variants and saves the product in one transaction. |
+| P1 | Concurrent payments could both pass the same balance check. Moving a payment left the original invoice status stale. | Serialize payment mutations on the parent invoice and reject invoice reassignment. Guard invoice cancellation/payment status against recorded balances. |
+| P1 | Vite and Zod had high-severity advisories; transitive development dependencies had moderate advisories. | Upgrade affected packages and pin compatible patched esbuild/minimatch overrides; refresh both lockfiles. `npm audit` reports zero vulnerabilities. |
+| P2 | Billing skipped unbilled older periods and month/year boundaries drifted after short months. Shared discount usage could exceed its cap concurrently. | Catch up missing periods, calculate boundaries from the original start, serialize billing runs and lock discount usage. Preserve invoice uniqueness and reject overlap with legacy drifted invoices before generating charges. |
+| P2 | Database accepted percentage discounts above 100, invalid usage limits, negative variant prices and invalid plan/invoice ranges. Lifecycle flags were ignored. | Add constraints and transactional subscription validation for plan dates, quantities, variant ownership and pause/close/renew permissions. Honor auto-close when billing expired subscriptions. |
+| P2 | A privileged portal visitor without a customer link could fall back to every visible invoice/subscription; customer lookup errors were swallowed. | Require an explicit user/customer link, propagate errors and return an empty unlinked account. |
+| P2 | Portal offered payment writes prohibited by customer RLS. All staff payment entries were labeled demo. | Keep customer ledger access read-only. Clearly label staff actions as offline payment records and save them as non-demo. |
+| P2 | Changing users outside the sidebar sign-out could retain cached private data. Role-query failures silently fell back to customer. | Cancel and clear cached queries when the auth identity changes; propagate failed role lookups. |
+| P2 | Supabase's response cap silently truncated lists, metrics and account histories. Cache keys omitted sort order. | Read every page with stable ordering, propagate page errors and include ordering in query keys. List errors reach the route error boundary. |
+| P2 | MRR included tax; cancelled/draft invoices inflated totals; collections were grouped by invoice month and rounded to whole dollars. | Exclude tax from MRR and nonbillable invoices from balances/volume; group collections by payment date and retain cents. Ignore expired/inactive/exhausted discounts in previews. Use decimal arithmetic to match PostgreSQL currency rounding. |
+| P2 | Subscription form state could carry between route IDs or overwrite edits on background refetch. Payment forms reset on parent rerenders. | Key forms by record identity, derive pristine subscription data from queries, and keep local drafts until save. |
+| P2 | Browser storage restrictions could break auth; missing browser env could throw `process is not defined`. | Provide memory-backed auth storage and guard server env fallback. Require broker replies to come from the editor parent. Mark the admin client server-only. |
+| P2 | Failed staff role insertion left a provisioned unprivileged account behind. | Roll back auth user creation on role failure and handle authorization lookup errors. Validate password byte length. |
+| P2 | Fresh installations lacked explicit invoice/subscription sequence privileges. Documentation described an unrelated screenshot app, with no migration/account setup. | Grant necessary sequence usage and document actual setup, environment, migration order, bootstrap and offline billing semantics. |
+| P2 | Lint failed with 996 formatting errors; only one route-matching test existed; no CI checks ran. | Format maintained sources, preserve generated formatting, fix render purity/mobile subscription issues, add regression suites and CI with pinned actions. |
+
+## Verification
+
+Unit/component tests cover auth roles and guards, blocked browser storage, currency/discount arithmetic, revenue month attribution, pagination/error handling and payment draft/record behavior. PostgreSQL tests execute the original and audit migrations against a disposable database and verify customer isolation, hidden costs, revoked demo roles, staff transactional writes, rollback, lifecycle checks, billing idempotency/anchors, payment status and concurrent payment/discount operations. Local checks passed: 18 unit/component tests, 10 PostgreSQL tests (PostgreSQL 18), lint with no errors or warnings, type checking, a production build and zero reported npm vulnerabilities. Local browser verification covered sign-in rendering and signed-out dashboard redirection with placeholder connection settings. CI is configured to repeat the checks against PostgreSQL 17.
+
+## Deployment and verification limits
+
+- Apply `0001_audit_fixes.sql` through the database's existing migration mechanism before deploying the updated UI. The original migration is preserved. Existing records are not retroactively recalculated or reissued.
+- Review historical invoice boundaries and missing periods before the first catch-up billing run. Overlapping legacy boundaries block billing with a reconciliation error, preventing duplicate charges. Historical pause/resume times cannot be reconstructed because the baseline schema has no lifecycle event history.
+- SQL tests use a minimal Auth harness, not a live Supabase Auth/PostgREST installation. Real email delivery, hosted auth configuration, live service-role provisioning, preview-editor brokering and deployed browser flows require verification in the target environment; no production credentials or deployment were supplied.
+- This remains a single-workspace billing application. Separate organizations, payment gateway integration, proration, refunds and historical financial reconciliation are product scope beyond the existing implementation.
+- Dependency audit results describe the registry at audit time. Dependabot and CI help catch later disclosures. No finite audit establishes that every possible defect has been eliminated.

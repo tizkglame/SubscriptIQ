@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { createFileRoute, useRouteContext } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -14,10 +13,15 @@ import {
   Wallet,
   AlertCircle,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { PageHeader, Panel, Loading, StatusBadge, tableHead, EmptyState } from "@/components/common";
-import { PaymentDialog } from "@/components/payment-dialog";
-import { db } from "@/lib/data";
+import {
+  PageHeader,
+  Panel,
+  Loading,
+  StatusBadge,
+  tableHead,
+  EmptyState,
+} from "@/components/common";
+import { db, fetchAllRows } from "@/lib/data";
 import { guard } from "@/lib/auth";
 import { calcTotals, effectiveInvoiceStatus, fmtDate, money, outstanding } from "@/lib/format";
 
@@ -70,65 +74,41 @@ type PortalData = {
 
 function CustomerPortalPage() {
   const { user } = useRouteContext({ from: "/_authenticated" });
-  const [payInvoice, setPayInvoice] = useState<{ id: string; number: string; balance: number } | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["customer-portal", user.id],
     queryFn: async () => {
       // 1. Locate customer account for logged in user
-      let { data: customer } = await db
+      const { data: customer, error: customerError } = await db
         .from("customers")
         .select("*")
         .eq("user_id", user.id)
         .maybeSingle();
+      if (customerError) throw customerError;
+      if (!customer) return { customer: null, subscriptions: [], invoices: [] } as PortalData;
 
-      if (!customer && user.email) {
-        const { data: byEmail } = await db
-          .from("customers")
-          .select("*")
-          .eq("email", user.email)
-          .maybeSingle();
-        if (byEmail) {
-          customer = byEmail;
-        }
-      }
-
-      if (!customer) {
-        // Query subscriptions and invoices directly using RLS policies
-        const { data: subs } = await db
-          .from("subscriptions")
-          .select("*, plans(name, billing_period, pausable, closable), discounts(type, value, code), subscription_lines(*, products(name, type))")
-          .order("created_at", { ascending: false });
-
-        const { data: invs } = await db
-          .from("invoices")
-          .select("*, payments(id, amount, paid_on, method)")
-          .order("issue_date", { ascending: false });
-
-        return {
-          customer: null,
-          subscriptions: (subs ?? []) as PortalData["subscriptions"],
-          invoices: (invs ?? []) as PortalData["invoices"],
-        };
-      }
-
-      // 2. Fetch customer's subscriptions
-      const { data: subs, error: subsErr } = await db
-        .from("subscriptions")
-        .select("*, plans(name, billing_period, pausable, closable), discounts(type, value, code), subscription_lines(*, products(name, type))")
-        .eq("customer_id", customer.id)
-        .order("created_at", { ascending: false });
-
-      if (subsErr) throw subsErr;
-
-      // 3. Fetch customer's invoices
-      const { data: invs, error: invsErr } = await db
-        .from("invoices")
-        .select("*, payments(id, amount, paid_on, method)")
-        .eq("customer_id", customer.id)
-        .order("issue_date", { ascending: false });
-
-      if (invsErr) throw invsErr;
+      const [subs, invs] = await Promise.all([
+        fetchAllRows<PortalData["subscriptions"][number]>((from, to) =>
+          db
+            .from("subscriptions")
+            .select(
+              "*, plans(name, billing_period, pausable, closable), discounts(*), subscription_lines(*, products(name, type))",
+            )
+            .eq("customer_id", customer.id)
+            .order("created_at", { ascending: false })
+            .order("id")
+            .range(from, to),
+        ),
+        fetchAllRows<PortalData["invoices"][number]>((from, to) =>
+          db
+            .from("invoices")
+            .select("*, payments(id, amount, paid_on, method)")
+            .eq("customer_id", customer.id)
+            .order("issue_date", { ascending: false })
+            .order("id")
+            .range(from, to),
+        ),
+      ]);
 
       return {
         customer,
@@ -143,11 +123,10 @@ function CustomerPortalPage() {
     return <p className="py-8 text-destructive">Failed to load customer portal.</p>;
   }
 
-  const activeSub =
-    data.subscriptions.find((s) => s.status === "active") ?? data.subscriptions[0];
+  const activeSub = data.subscriptions.find((s) => s.status === "active") ?? data.subscriptions[0];
 
   const totalOutstanding = data.invoices
-    .filter((inv) => inv.status !== "cancelled")
+    .filter((inv) => !["cancelled", "draft"].includes(inv.status))
     .reduce((sum, inv) => sum + outstanding(inv.total, inv.payments ?? []), 0);
 
   const subTotals = activeSub
@@ -212,9 +191,7 @@ function CustomerPortalPage() {
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-medium uppercase tracking-wide">Outstanding Balance</span>
             <Wallet
-              className={`h-4 w-4 ${
-                totalOutstanding > 0 ? "text-destructive" : "text-success"
-              }`}
+              className={`h-4 w-4 ${totalOutstanding > 0 ? "text-destructive" : "text-success"}`}
             />
           </div>
           <div
@@ -251,10 +228,7 @@ function CustomerPortalPage() {
                 </h4>
                 <div className="mt-2 divide-y rounded-lg border">
                   {activeSub.subscription_lines.map((l) => (
-                    <div
-                      key={l.id}
-                      className="flex items-center justify-between p-3 text-sm"
-                    >
+                    <div key={l.id} className="flex items-center justify-between p-3 text-sm">
                       <div className="flex items-center gap-2">
                         <Package className="h-4 w-4 text-muted-foreground" />
                         <div>
@@ -346,9 +320,7 @@ function CustomerPortalPage() {
 
                       return (
                         <tr key={inv.id} className="border-t hover:bg-muted/40">
-                          <td className="px-4 py-3 font-medium text-foreground">
-                            {inv.number}
-                          </td>
+                          <td className="px-4 py-3 font-medium text-foreground">{inv.number}</td>
                           <td className="px-4 py-3 text-xs text-muted-foreground">
                             {fmtDate(inv.period_start)} → {fmtDate(inv.period_end)}
                           </td>
@@ -356,9 +328,7 @@ function CustomerPortalPage() {
                             {fmtDate(inv.due_date)}
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <div className="font-medium text-foreground">
-                              {money(inv.total)}
-                            </div>
+                            <div className="font-medium text-foreground">{money(inv.total)}</div>
                             {bal > 0 && bal < inv.total && (
                               <div className="text-[11px] text-muted-foreground">
                                 Bal: {money(bal)}
@@ -370,22 +340,16 @@ function CustomerPortalPage() {
                           </td>
                           <td className="px-4 py-3 text-right">
                             {canPay ? (
-                              <Button
-                                size="sm"
-                                className="h-8 gap-1 text-xs"
-                                onClick={() =>
-                                  setPayInvoice({
-                                    id: inv.id,
-                                    number: inv.number,
-                                    balance: bal,
-                                  })
-                                }
-                              >
-                                <Wallet className="h-3.5 w-3.5" /> Pay {money(bal)}
-                              </Button>
+                              <span className="text-xs text-muted-foreground">
+                                Contact billing to pay {money(bal)}
+                              </span>
                             ) : (
                               <span className="text-xs font-medium text-success">
-                                Settled
+                                {inv.status === "cancelled"
+                                  ? "Cancelled"
+                                  : inv.status === "draft"
+                                    ? "Draft"
+                                    : "Settled"}
                               </span>
                             )}
                           </td>
@@ -440,22 +404,12 @@ function CustomerPortalPage() {
           <Panel className="p-5">
             <h3 className="mb-2 font-semibold text-foreground">Security & Access</h3>
             <p className="text-xs text-muted-foreground">
-              You are signed in via SubscriptIQ Secure Customer Portal. Row-Level Security
-              enforces that only records associated with your account are accessible.
+              You are signed in via SubscriptIQ Secure Customer Portal. Row-Level Security enforces
+              that only records associated with your account are accessible.
             </p>
           </Panel>
         </div>
       </div>
-
-      <PaymentDialog
-        invoice={
-          payInvoice
-            ? { id: payInvoice.id, number: payInvoice.number }
-            : null
-        }
-        balance={payInvoice?.balance ?? 0}
-        onClose={() => setPayInvoice(null)}
-      />
     </>
   );
 }

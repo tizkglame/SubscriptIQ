@@ -69,12 +69,18 @@ function InvoiceDetailPage() {
   const { role } = useRouteContext({ from: "/_authenticated" });
   const [payOpen, setPayOpen] = useState(false);
 
-  const { data: inv, isLoading, error } = useQuery({
+  const {
+    data: inv,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ["invoice", id],
     queryFn: async () => {
       const { data, error } = await db
         .from("invoices")
-        .select("*, customers(*), subscriptions(id, number, status, payment_terms_days, tax_rate), invoice_lines(*), payments(*)")
+        .select(
+          "*, customers(*), subscriptions(id, number, status, payment_terms_days, tax_rate), invoice_lines(*), payments(*)",
+        )
         .eq("id", id)
         .single();
       if (error) throw error;
@@ -82,28 +88,25 @@ function InvoiceDetailPage() {
     },
   });
 
-  const cancelInvoice = useAction(
-    async () => {
-      const { error } = await db.from("invoices").update({ status: "cancelled" }).eq("id", id);
-      if (error) throw error;
-    },
-    "Invoice cancelled"
-  );
+  const cancelInvoice = useAction(async () => {
+    const { error } = await db.from("invoices").update({ status: "cancelled" }).eq("id", id);
+    if (error) throw error;
+  }, "Invoice cancelled");
 
-  const deleteInvoice = useAction(
-    async () => {
-      const { error } = await db.from("invoices").delete().eq("id", id);
-      if (error) throw error;
-      navigate({ to: "/invoices" });
-    },
-    "Invoice deleted"
-  );
+  const deleteInvoice = useAction(async () => {
+    const { error } = await db.from("invoices").delete().eq("id", id);
+    if (error) throw error;
+    navigate({ to: "/invoices" });
+  }, "Invoice deleted");
 
   if (isLoading) return <Loading />;
   if (error || !inv) {
     return (
       <div className="py-8">
-        <Link to="/invoices" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+        <Link
+          to="/invoices"
+          className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
           <ArrowLeft className="h-4 w-4" /> Back to Invoices
         </Link>
         <p className="mt-4 text-destructive">Invoice not found.</p>
@@ -142,7 +145,10 @@ function InvoiceDetailPage() {
               <Button
                 variant="outline"
                 disabled={cancelInvoice.isPending}
-                onClick={() => confirm("Are you sure you want to cancel this invoice?") && cancelInvoice.mutate(undefined)}
+                onClick={() =>
+                  confirm("Are you sure you want to cancel this invoice?") &&
+                  cancelInvoice.mutate(undefined)
+                }
               >
                 <Ban className="h-4 w-4 text-warning" /> Cancel
               </Button>
@@ -151,7 +157,10 @@ function InvoiceDetailPage() {
               <Button
                 variant="outline"
                 disabled={deleteInvoice.isPending}
-                onClick={() => confirm(`Are you sure you want to delete ${inv.number}?`) && deleteInvoice.mutate(undefined)}
+                onClick={() =>
+                  confirm(`Are you sure you want to delete ${inv.number}?`) &&
+                  deleteInvoice.mutate(undefined)
+                }
               >
                 <Trash2 className="h-4 w-4 text-destructive" /> Delete
               </Button>
@@ -166,14 +175,20 @@ function InvoiceDetailPage() {
           <Panel className="p-5">
             <div className="flex items-center justify-between border-b pb-4">
               <div>
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">Status</span>
+                <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Status
+                </span>
                 <div className="mt-1">
                   <StatusBadge status={effStatus} />
                 </div>
               </div>
               <div className="text-right">
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">Amount Due</span>
-                <div className={`mt-1 text-lg font-semibold ${balance > 0 ? "text-destructive" : "text-success"}`}>
+                <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Amount Due
+                </span>
+                <div
+                  className={`mt-1 text-lg font-semibold ${balance > 0 ? "text-destructive" : "text-success"}`}
+                >
                   {money(balance)}
                 </div>
               </div>
@@ -182,7 +197,9 @@ function InvoiceDetailPage() {
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <div>
                 <span className="text-xs font-medium text-muted-foreground">Customer</span>
-                <div className="mt-0.5 font-medium text-foreground">{inv.customers?.name ?? "—"}</div>
+                <div className="mt-0.5 font-medium text-foreground">
+                  {inv.customers?.name ?? "—"}
+                </div>
                 {inv.customers?.company && (
                   <div className="text-xs text-muted-foreground">{inv.customers.company}</div>
                 )}
@@ -192,7 +209,9 @@ function InvoiceDetailPage() {
               </div>
 
               <div>
-                <span className="text-xs font-medium text-muted-foreground">Linked Subscription</span>
+                <span className="text-xs font-medium text-muted-foreground">
+                  Linked Subscription
+                </span>
                 <div className="mt-0.5">
                   {inv.subscriptions ? (
                     <Link
@@ -222,12 +241,8 @@ function InvoiceDetailPage() {
 
               <div>
                 <span className="text-xs font-medium text-muted-foreground">Payment Dates</span>
-                <div className="mt-0.5 text-sm">
-                  Issued: {fmtDate(inv.issue_date)}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Due: {fmtDate(inv.due_date)}
-                </div>
+                <div className="mt-0.5 text-sm">Issued: {fmtDate(inv.issue_date)}</div>
+                <div className="text-xs text-muted-foreground">Due: {fmtDate(inv.due_date)}</div>
               </div>
             </div>
           </Panel>
@@ -241,7 +256,9 @@ function InvoiceDetailPage() {
               </span>
             </div>
             {inv.invoice_lines.length === 0 ? (
-              <p className="px-5 py-8 text-center text-sm text-muted-foreground">No line items recorded for this invoice.</p>
+              <p className="px-5 py-8 text-center text-sm text-muted-foreground">
+                No line items recorded for this invoice.
+              </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -258,7 +275,9 @@ function InvoiceDetailPage() {
                       <tr key={l.id} className="border-t">
                         <td className="px-4 py-3 font-medium text-foreground">{l.description}</td>
                         <td className="px-4 py-3 text-right">{l.quantity}</td>
-                        <td className="px-4 py-3 text-right text-muted-foreground">{money(l.unit_price)}</td>
+                        <td className="px-4 py-3 text-right text-muted-foreground">
+                          {money(l.unit_price)}
+                        </td>
                         <td className="px-4 py-3 text-right font-medium">{money(l.amount)}</td>
                       </tr>
                     ))}
@@ -304,7 +323,9 @@ function InvoiceDetailPage() {
                       <tr key={p.id} className="border-t">
                         <td className="px-4 py-3 text-muted-foreground">{fmtDate(p.paid_on)}</td>
                         <td className="px-4 py-3 capitalize">{p.method.replace("_", " ")}</td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">{p.notes || "—"}</td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">
+                          {p.notes || "—"}
+                        </td>
                         <td className="px-4 py-3 text-xs">
                           {p.is_demo ? (
                             <span className="rounded bg-accent px-1.5 py-0.5 text-[11px] text-accent-foreground">
@@ -316,7 +337,9 @@ function InvoiceDetailPage() {
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-right font-medium text-success">+{money(p.amount)}</td>
+                        <td className="px-4 py-3 text-right font-medium text-success">
+                          +{money(p.amount)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -355,7 +378,9 @@ function InvoiceDetailPage() {
               </div>
               <div className="flex justify-between border-t pt-2 text-base font-semibold">
                 <dt>Balance due</dt>
-                <dd className={balance > 0 ? "text-destructive" : "text-success"}>{money(balance)}</dd>
+                <dd className={balance > 0 ? "text-destructive" : "text-success"}>
+                  {money(balance)}
+                </dd>
               </div>
             </dl>
 
