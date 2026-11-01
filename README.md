@@ -1,10 +1,10 @@
 # SubscriptIQ
 
-Subscription management for Brightloop Software, built with React, TanStack Start, Supabase and PostgreSQL. Admins manage the team; admins and staff manage the catalog, customers, subscriptions, invoices and offline payment records. Customers have a read-only account portal.
+Subscription management for Brightloop Software, built with React, TanStack Start, Supabase and PostgreSQL. Admins manage the team; admins and staff manage the catalog, customers, subscriptions, invoices and offline payment records. Customers have a real-only account portal.
 
 ## Local development
 
-Use Node.js 22.13 or later and npm. Both lockfiles are maintained for the connected Lovable/Bun workflow; CI uses `package-lock.json`.
+Use Node.js 22.13 or later and npm. CI uses `package-lock.json`.
 
 ```sh
 git clone https://github.com/tizkglame/SubscriptIQ.git
@@ -18,15 +18,15 @@ Fill in the Supabase URL and publishable key in `.env`. The `VITE_*` values are 
 
 ## Database and accounts
 
-Use a Supabase project: the migrations depend on `auth.users`, `auth.uid()` and Supabase roles. Set `LOVABLE_DB_MIGRATION_URL` to the direct/session PostgreSQL connection, then run:
+Use a Supabase project: the migrations depend on `auth.users`, `auth.uid()` and Supabase roles. Set the direct/session PostgreSQL connection in your environment, then run:
 
 ```sh
 npm run db:migrate
 ```
 
-The CLI loads `.env` and applies the migration journal in order. On an existing Lovable database whose original SQL was applied outside Drizzle, use its existing migration mechanism to apply **only** `drizzle/migrations/0001_audit_fixes.sql`; do not replay `0000_migration.sql`. Back up the database before applying migrations. The original migration includes sample billing records.
+The CLI loads `.env` and applies the migration journal in order. On an existing database whose original SQL was applied outside Drizzle, use its existing migration mechanism to apply **only** `drizzle/migrations/0001_audit_fixes.sql`; do not replay `0000_migration.sql`. Back up the database before applying migrations. The original migration includes sample billing records.
 
-Apply the audit migration **before** deploying this app update: the editors require the new `save_subscription`, `save_product` and `list_products` RPCs. The migration revokes access from the three publicly shared `@brightloop.demo` accounts; use individual accounts instead. It does not delete auth users or existing financial records. New constraints preserve legacy rows with `NOT VALID`, but reject invalid new/updated records. Review and reconcile invalid legacy rows before validating the constraints.
+Apply the audit migration **before** deploying this app update: the editors require the new `save_subscription`, `save_product` and `list_products` RPCs. The migration revokes access from the three publicly shared `@brightloop.demo` accounts; use individual accounts instead. It does not delete auth users or existing financial records. New constraints preserve legacy rows with `NOT VALID`, but reject invalid new/update records. Review and reconcile invalid legacy rows before validating the constraints.
 
 Bootstrap the first admin by creating an individually owned, confirmed user in Supabase Auth, then run this in the Supabase SQL editor with its actual user ID:
 
@@ -74,8 +74,4 @@ The tests create and drop a uniquely named database, install a minimal Supabase 
 
 Update `@tanstack/react-start`, `@tanstack/react-router` and `@tanstack/router-plugin` together and regenerate both lockfiles. TanStack Start pins a router version internally; the app and framework must resolve the same router copy so they share React contexts. `npm run check:deps` verifies that requirement after a clean install, and CI runs it before the application checks.
 
-The TypeScript toolchain currently uses the supported 6.0.x line. `typescript-eslint@8.72` requires TypeScript `>=4.8.4 <6.1.0`, so Dependabot groups the compiler/parser updates and excludes TypeScript 6.1 and newer until parser support is reviewed. TypeScript 7 cannot currently be installed with the existing parser peer requirements. Keep npm peer checks enabled when updating dependencies.
-
-## Lovable
-
-Continue editing in the [connected Lovable project](https://lovable.dev/projects/de564323-4dad-4ac7-a7a8-c64cea3d3856). Changes on the connected branch sync to Lovable. Preserve published Git history as described in `AGENTS.md`.
+The TypeScript toolchain currently uses the supported 6.0.x line. `typescript-eslint@8.72` requires TypeScript `>=4.8.4 <6.1.0`, so Dependabot groups the compiler/parser updates and excludes TypeScript 6.1 and newer until parser support is reviewed. TypeScript 7 cannot currently be installed with the existing parser peer requirements. Keep `npm` peer checks enabled when updating dependencies.
