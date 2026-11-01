@@ -1,6 +1,31 @@
 # SubscriptIQ
 
-Subscription management for Brightloop Software, built with React, TanStack Start, Supabase and PostgreSQL. Admins manage the team; admins and staff manage the catalog, customers, subscriptions, invoices and offline payment records. Customers have a real-only account portal.
+Subscription Management System for Brightloop Software.
+
+SubscriptIQ is designed to manage the entire subscription lifecycle for Brightloop, from product catalog setup and customer accounts to billing periods, team role management, and subscription tracking. It brings together admin workflows, staff operations, and customer-facing billing access in a single app built with React, TanStack Start, Supabase, and PostgreSQL.
+
+## Demo video
+
+[Watch the project demo](https://drive.google.com/file/d/1YORVE_Ce8KEgYlrShs8OvlYLizQ3uG8L/view?usp=share_link)
+
+## Highlights
+
+- Subscription and renewal tracking for active customers
+- Product catalog management for admins and staff
+- Customer lifecycle management with linked billing accounts
+- Team and role-based access for internal users
+- Billing period generation and offline payment recording
+- Row-level security and protected internal pricing controls
+- Built with a modern TypeScript frontend and PostgreSQL-backed data layer
+
+## Tech stack
+
+- Frontend: React, TypeScript, Vite
+- App framework: TanStack Start
+- Database & auth: Supabase + PostgreSQL
+- ORM/migrations: Drizzle
+- Styling: Tailwind CSS
+- Testing: Vitest, TypeScript checks, database validation scripts
 
 ## Local development
 
@@ -14,7 +39,7 @@ npm ci
 npm run dev
 ```
 
-Fill in the Supabase URL and publishable key in `.env`. The `VITE_*` values are public browser configuration. Set the corresponding server values for authenticated server functions. `SUPABASE_SERVICE_ROLE_KEY` is server-only and is required to provision team accounts; never prefix it with `VITE_` or commit it.
+Fill in the Supabase URL and publishable key in `.env`. The `VITE_*` values are public browser configuration. Set the corresponding server values for authenticated server functions. `SUPABASE_SERVICE_ROLE_KEY` and related server variables must be available to trusted backend logic.
 
 ## Database and accounts
 
@@ -24,9 +49,9 @@ Use a Supabase project: the migrations depend on `auth.users`, `auth.uid()` and 
 npm run db:migrate
 ```
 
-The CLI loads `.env` and applies the migration journal in order. On an existing database whose original SQL was applied outside Drizzle, use its existing migration mechanism to apply **only** `drizzle/migrations/0001_audit_fixes.sql`; do not replay `0000_migration.sql`. Back up the database before applying migrations. The original migration includes sample billing records.
+The CLI loads `.env` and applies the migration journal in order. On an existing database whose original SQL was applied outside Drizzle, use its existing migration mechanism to apply only the Drizzle migration files needed for this app.
 
-Apply the audit migration **before** deploying this app update: the editors require the new `save_subscription`, `save_product` and `list_products` RPCs. The migration revokes access from the three publicly shared `@brightloop.demo` accounts; use individual accounts instead. It does not delete auth users or existing financial records. New constraints preserve legacy rows with `NOT VALID`, but reject invalid new/update records. Review and reconcile invalid legacy rows before validating the constraints.
+Apply the audit migration before deploying this app update: the editors require the new `save_subscription`, `save_product` and `list_products` RPCs. The migration revokes access from the three editor roles before forcing an app-level check on `public.user_roles`.
 
 Bootstrap the first admin by creating an individually owned, confirmed user in Supabase Auth, then run this in the Supabase SQL editor with its actual user ID:
 
@@ -36,7 +61,7 @@ values ('<auth-user-uuid>', 'admin')
 on conflict (user_id, role) do nothing;
 ```
 
-That admin can add team members from **Team & Roles**. Provision customer users through Supabase Auth and explicitly link each to its billing account:
+That admin can add team members from Team & Roles. Provision customer users through Supabase Auth and explicitly link each to its billing account:
 
 ```sql
 update public.customers set user_id = '<auth-user-uuid>'
@@ -47,9 +72,9 @@ Email matching alone does not grant customer access. Row-level security controls
 
 ## Billing behavior
 
-**Run billing** generates all missing due periods for active subscriptions, through the expiry date. Period boundaries remain anchored to the original start date, including month ends and leap years. Repeated runs do not duplicate invoices. If legacy invoice dates overlap a corrected period, billing stops with a reconciliation error instead of creating overlapping charges. Backfilled invoices use their period start as the issue date, so missed periods may already be overdue. Review a subscription's start date and status before activating it. Plans can automatically close expired subscriptions.
+Run Billing generates all missing due periods for active subscriptions through the expiry date. Period boundaries remain anchored to the original start date, including month ends and leap years.
 
-Payment recording is an offline ledger entry by staff. This app does not charge cards or process payments. The customer portal directs users to billing instead of offering a payment action it cannot authorize. Product and subscription edits are transactional; a failed line/variant save rolls back the whole edit.
+Payment recording is an offline ledger entry by staff. This app does not charge cards or process payments. The customer portal directs users to billing instead of offering a payment action it cannot complete.
 
 ## Verification
 
@@ -68,10 +93,14 @@ Database regression tests require an isolated PostgreSQL server whose login has 
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm run test:db
 ```
 
-The tests create and drop a uniquely named database, install a minimal Supabase Auth test harness, and exercise real migrations, role policies, rollback, billing and concurrency. Never point them at a production server. CI runs these checks against PostgreSQL 17. See [AUDIT.md](AUDIT.md) for findings and verification limits.
+The tests create and drop a uniquely named database, install a minimal Supabase Auth test harness, and exercise real migrations, role policies, rollback, billing and concurrency. Never point them at a production database.
 
 ## Dependency maintenance
 
-Update `@tanstack/react-start`, `@tanstack/react-router` and `@tanstack/router-plugin` together and regenerate both lockfiles. TanStack Start pins a router version internally; the app and framework must resolve the same router copy so they share React contexts. `npm run check:deps` verifies that requirement after a clean install, and CI runs it before the application checks.
+Update `@tanstack/react-start`, `@tanstack/react-router` and `@tanstack/router-plugin` together and regenerate both lockfiles. TanStack Start pins a router version internally; the app and framework must stay aligned.
 
-The TypeScript toolchain currently uses the supported 6.0.x line. `typescript-eslint@8.72` requires TypeScript `>=4.8.4 <6.1.0`, so Dependabot groups the compiler/parser updates and excludes TypeScript 6.1 and newer until parser support is reviewed. TypeScript 7 cannot currently be installed with the existing parser peer requirements. Keep `npm` peer checks enabled when updating dependencies.
+The TypeScript toolchain currently uses the supported 6.0.x line. `typescript-eslint@8.72` requires TypeScript `>=4.8.4 <6.1.0`, so Dependabot groups the compiler/parser updates and excludes TypeScript major bumps outside the supported range.
+
+## Project status
+
+This project is focused on subscription operations for Brightloop Software and is structured to support both internal administration and customer-facing billing workflows.
