@@ -1,3 +1,13 @@
+# GitHub Pages demo — November 2026
+
+An interactive static demo now runs from `main:/docs` on GitHub Pages. It uses the same audited migrations, SQL billing functions, query validation and row policies as the Node app, through PGlite in a browser worker. Sample data is initialized in each visitor's IndexedDB database; tab coordination and persistent preview account selection support refreshes and multiple tabs. Hash routes preserve navigation under the repository URL.
+
+Browser demo accounts preview roles and do not protect a shared hosted database. No live local database records, API keys, session cookies or server credentials are included in the published assets. The banner identifies the sample workspace; reset affects only that browser's demo data. The full Node/PostgreSQL authentication path remains available with Docker.
+
+Validation: 28 frontend/browser-engine tests, 10 PostgreSQL regression tests and 9 Node API tests pass, plus lint, typecheck, both builds and a dependency audit with zero vulnerabilities. Browser verification covers edits surviving reloads, cross-tab persistence and worker leadership changes, feature pages and role switching. CI checks that the committed static site matches its source before testing the Docker stack.
+
+---
+
 # Local-stack update — November 2026
 
 The app now runs with a local Node API and PostgreSQL. Hosted authentication, its SDK, service keys, generated integration code and old cloud migration tooling have been removed. The audited billing logic and row permissions are retained in `database/migrations` with native local users.

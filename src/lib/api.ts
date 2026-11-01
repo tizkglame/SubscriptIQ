@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Role } from "./auth";
+import { isBrowserDemo } from "./runtime";
 
 export type Session = { user: { id: string; email: string; full_name: string }; role: Role };
 const events = new EventTarget();
@@ -24,6 +25,21 @@ function authChanged() {
 }
 
 export async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  if (isBrowserDemo) {
+    try {
+      return await (await import("../demo/client")).demoRequest<T>(path, body, signal);
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "status" in error &&
+        error.status === 401 &&
+        path !== "/auth/login"
+      )
+        authChanged();
+      throw error;
+    }
+  }
   const response = await fetch(`/api${path}`, {
     method: body === undefined ? "GET" : "POST",
     credentials: "same-origin",

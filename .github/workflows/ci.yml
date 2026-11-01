@@ -36,6 +36,9 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       - run: npm run build
+      - run: npm run pages:prepare
+      - name: Check the published demo matches its source
+        run: git diff --exit-code --stat -- docs
       - run: npm run test:api
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres

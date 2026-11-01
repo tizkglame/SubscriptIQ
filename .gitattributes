@@ -1,0 +1,7 @@
+docs/assets/** linguist-generated=true -whitespace
+docs/assets/*.data binary
+docs/assets/*.wasm binary
+docs/assets/*.woff binary
+docs/assets/*.woff2 binary
+docs/favicon.ico binary
+docs/index.html linguist-generated=true

@@ -1,5 +1,8 @@
 node_modules
 dist
+dist-pages
+docs/assets
+docs/index.html
 .output
 .vinxi
 pnpm-lock.yaml

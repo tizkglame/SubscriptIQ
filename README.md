@@ -2,6 +2,34 @@
 
 Subscription management for Brightloop Software: catalog, customers, plans, discounts, subscriptions, invoices, offline payments, team roles and a customer portal. Everything runs locally with React, TanStack Router, a Node.js API and PostgreSQL. No cloud account, API keys or `.env` file are needed for the Docker setup.
 
+## Live project
+
+**[Open SubscriptIQ on GitHub Pages](https://tizkglame.github.io/SubscriptIQ/)**
+
+The live demo opens as admin with sample customers, products, plans, subscriptions and invoices. Try the catalog editors, billing, payment recording and team/customer accounts. Sign out to switch to the staff or customer sample account; all three use `LocalDemo123!`.
+
+Each visitor gets a separate browser database. Demo edits and the selected account persist across refreshes and tabs in that browser; **Reset demo** restores the sample data. No API keys, backend connection or installation are needed. This is a preview workspace with simulated sign-in, not a hosted shared business database. Use Docker below for the full server-backed application.
+
+### Publish updates to the demo
+
+GitHub Pages is configured to publish `main:/docs`. The generated HTML, JavaScript, fonts and browser database runtime are committed there so deployment works with ordinary repository write access.
+
+```sh
+npm ci
+npm run pages:prepare
+# Commit source changes and the regenerated docs/ together, then push main.
+```
+
+CI rebuilds the demo and checks that `docs/` matches its source. Keep `docs/assets` and `docs/index.html` generated. A push containing the updated `docs/` automatically triggers the repository's Pages deployment. The demo uses hash routes so direct links and refreshes work under `/SubscriptIQ/`.
+
+Preview the static build locally:
+
+```sh
+npm run build:pages
+npm run preview:pages
+# Open http://localhost:4173/SubscriptIQ/
+```
+
 ## Run with Docker (recommended)
 
 Install and start [Docker Desktop](https://docs.docker.com/desktop/) or Docker Engine with Compose v2. Then:
@@ -24,7 +52,7 @@ All three local demo accounts use the password **`LocalDemo123!`**. The sign-in 
 | Staff    | `staff@subscriptiq.local`    | Dashboard, customers, catalog, subscriptions, billing and payment recording |
 | Customer | `customer@subscriptiq.local` | Their own subscriptions, invoices and payment history                       |
 
-The app is bound to the local computer (`127.0.0.1:3000`). PostgreSQL is reachable only inside the Compose network. These sample accounts and fixed database credentials are for local evaluation.
+The Docker app is bound to the local computer (`127.0.0.1:3000`). PostgreSQL is reachable only inside the Compose network. These sample accounts and fixed database credentials are for local evaluation.
 
 ### Everyday commands
 
@@ -126,7 +154,7 @@ docker compose exec -e TEST_DATABASE_URL=postgres://subscriptiq:subscriptiq@db:5
 docker compose exec -e TEST_DATABASE_URL=postgres://subscriptiq:subscriptiq@db:5432/postgres app npm run test:api
 ```
 
-CI runs the frontend, database and API checks, then builds and starts the complete Docker stack and checks port 3000.
+CI runs the frontend/browser-demo, database and API checks, verifies the generated Pages site, then builds and starts the complete Docker stack and checks port 3000.
 
 ## How the local stack works
 

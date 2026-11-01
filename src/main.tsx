@@ -1,6 +1,8 @@
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { getRouter } from "./router";
+import { isBrowserDemo } from "./lib/runtime";
+import { DemoBootstrap } from "./components/demo-workspace";
 import "@fontsource/manrope/400.css";
 import "@fontsource/manrope/500.css";
 import "@fontsource/manrope/600.css";
@@ -18,4 +20,7 @@ declare module "@tanstack/react-router" {
   }
 }
 
-createRoot(document.getElementById("root")!).render(<RouterProvider router={router} />);
+const application = <RouterProvider router={router} />;
+createRoot(document.getElementById("root")!).render(
+  isBrowserDemo ? <DemoBootstrap>{application}</DemoBootstrap> : application,
+);

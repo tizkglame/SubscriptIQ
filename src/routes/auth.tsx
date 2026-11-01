@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/common";
 import { loadSession, homeFor } from "@/lib/auth";
 import { errMsg } from "@/lib/format";
+import { isBrowserDemo } from "@/lib/runtime";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
@@ -77,10 +78,16 @@ function AuthPage() {
       <div className="flex items-center justify-center p-6">
         <div className="w-full max-w-md">
           <h2 className="text-2xl font-semibold">Welcome back</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Sign in to your local workspace.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {isBrowserDemo
+              ? "Explore the demo as an admin, staff member or customer."
+              : "Sign in to your local workspace."}
+          </p>
 
           <div className="mt-5 rounded-lg border bg-muted/40 p-4 text-sm">
-            <p className="font-medium">Try the local demo</p>
+            <p className="font-medium">
+              {isBrowserDemo ? "Browser demo · sample data only" : "Try the local demo"}
+            </p>
             <p className="mt-1 text-muted-foreground">
               Password for all three accounts: <code>LocalDemo123!</code>
             </p>

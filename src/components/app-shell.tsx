@@ -21,6 +21,8 @@ import { signOut as localSignOut } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Role } from "@/lib/auth";
+import { isBrowserDemo } from "@/lib/runtime";
+import { DemoNotice } from "./demo-workspace";
 
 const NAV: { to: string; label: string; icon: typeof Users; roles: Role[] }[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "staff"] },
@@ -122,6 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="font-display font-semibold">SubscriptIQ</span>
         </header>
         <main className={cn("mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8")}>
+          {isBrowserDemo && <DemoNotice />}
           {children}
         </main>
       </div>

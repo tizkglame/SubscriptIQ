@@ -1,0 +1,1 @@
+import{r as e}from"./common-BR6g3Cqs.js";import{c as t}from"./button-Dy6zIBU-.js";var n=t(),r=()=>(0,n.jsx)(e,{});export{r as component};

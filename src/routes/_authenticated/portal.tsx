@@ -23,6 +23,7 @@ import {
 } from "@/components/common";
 import { db, fetchAllRows } from "@/lib/data";
 import { guard } from "@/lib/auth";
+import { isBrowserDemo } from "@/lib/runtime";
 import { calcTotals, effectiveInvoiceStatus, fmtDate, money, outstanding } from "@/lib/format";
 
 export const Route = createFileRoute("/_authenticated/portal")({
@@ -404,8 +405,9 @@ function CustomerPortalPage() {
           <Panel className="p-5">
             <h3 className="mb-2 font-semibold text-foreground">Security & Access</h3>
             <p className="text-xs text-muted-foreground">
-              You are signed in via SubscriptIQ Secure Customer Portal. Row-Level Security enforces
-              that only records associated with your account are accessible.
+              {isBrowserDemo
+                ? "This demo previews customer access with sample records. Your data and role switching stay in this browser."
+                : "You are signed in via SubscriptIQ Secure Customer Portal. Row-Level Security enforces that only records associated with your account are accessible."}
             </p>
           </Panel>
         </div>
