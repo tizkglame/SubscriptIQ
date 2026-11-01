@@ -20,18 +20,6 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "no-restricted-imports": [
-        "error",
-        {
-          paths: [
-            {
-              name: "server-only",
-              message:
-                "TanStack Start does not use the Next.js `server-only` package. Rename the module to `*.server.ts` or mark it with `@tanstack/react-start/server-only`.",
-            },
-          ],
-        },
-      ],
       "react-refresh/only-export-components": [
         "warn",
         {
@@ -55,7 +43,7 @@ export default tseslint.config(
   eslintPluginPrettier,
   // Generated integration sources retain the upstream generator's formatting.
   {
-    files: ["src/integrations/supabase/**/*.ts", "src/routeTree.gen.ts"],
+    files: ["src/routeTree.gen.ts"],
     rules: { "prettier/prettier": "off" },
   },
   // TanStack's router plugin handles HMR for file routes, which export Route metadata.

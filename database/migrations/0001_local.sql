@@ -1,3 +1,26 @@
+-- Native local accounts. Passwords and sessions are never exposed to app_user.
+do $$ begin create role app_user nologin; exception when duplicate_object then null; end $$;
+grant usage on schema public to app_user;
+create schema private;
+revoke all on schema private from public;
+create table private.users (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique check (email = lower(email)),
+  full_name text not null,
+  password_hash text not null,
+  created_at timestamptz not null default now()
+);
+create table private.sessions (
+  token_hash text primary key,
+  user_id uuid not null references private.users(id) on delete cascade,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index sessions_user_idx on private.sessions(user_id);
+create index sessions_expiry_idx on private.sessions(expires_at);
+create function public.current_user_id() returns uuid language sql stable as
+  $$ select nullif(current_setting('app.user_id', true), '')::uuid $$;
+
 
 -- ROLES
 create type public.app_role as enum ('admin','staff','customer');
@@ -7,23 +30,21 @@ create type public.invoice_status as enum ('draft','confirmed','paid','cancelled
 create type public.discount_type as enum ('fixed','percentage');
 
 create table public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
+  id uuid primary key references private.users(id) on delete cascade,
   email text,
   full_name text,
   created_at timestamptz not null default now()
 );
-grant select, insert, update on public.profiles to authenticated;
-grant all on public.profiles to service_role;
+grant select, insert, update on public.profiles to app_user;
 alter table public.profiles enable row level security;
 
 create table public.user_roles (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade not null,
+  user_id uuid references private.users(id) on delete cascade not null,
   role app_role not null,
   unique (user_id, role)
 );
-grant select on public.user_roles to authenticated;
-grant all on public.user_roles to service_role;
+grant select on public.user_roles to app_user;
 alter table public.user_roles enable row level security;
 
 create or replace function public.has_role(_user_id uuid, _role app_role)
@@ -32,22 +53,22 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 create or replace function public.is_staff()
 returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.user_roles where user_id = auth.uid() and role in ('admin','staff'))
+  select exists (select 1 from public.user_roles where user_id = public.current_user_id() and role in ('admin','staff'))
 $$;
 
-create policy "own role read" on public.user_roles for select to authenticated using (user_id = auth.uid() or public.has_role(auth.uid(),'admin'));
-create policy "own profile read" on public.profiles for select to authenticated using (id = auth.uid() or public.is_staff());
-create policy "own profile update" on public.profiles for update to authenticated using (id = auth.uid());
+create policy "own role read" on public.user_roles for select to app_user using (user_id = public.current_user_id() or public.has_role(public.current_user_id(),'admin'));
+create policy "own profile read" on public.profiles for select to app_user using (id = public.current_user_id() or public.is_staff());
+create policy "own profile update" on public.profiles for update to app_user using (id = public.current_user_id());
 
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
   insert into public.profiles (id, email, full_name)
-  values (new.id, new.email, coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email,'@',1)))
+  values (new.id, new.email, new.full_name)
   on conflict (id) do nothing;
   return new;
 end $$;
-create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
+create trigger on_local_user_created after insert on private.users for each row execute function public.handle_new_user();
 
 -- CUSTOMERS
 create table public.customers (
@@ -60,17 +81,16 @@ create table public.customers (
   user_id uuid unique,
   created_at timestamptz not null default now()
 );
-grant select, insert, update, delete on public.customers to authenticated;
-grant all on public.customers to service_role;
+grant select, insert, update, delete on public.customers to app_user;
 alter table public.customers enable row level security;
-create policy "staff read customers" on public.customers for select to authenticated using (public.is_staff() or user_id = auth.uid());
-create policy "staff write customers" on public.customers for insert to authenticated with check (public.is_staff());
-create policy "staff update customers" on public.customers for update to authenticated using (public.is_staff());
-create policy "admin delete customers" on public.customers for delete to authenticated using (public.has_role(auth.uid(),'admin'));
+create policy "staff read customers" on public.customers for select to app_user using (public.is_staff() or user_id = public.current_user_id());
+create policy "staff write customers" on public.customers for insert to app_user with check (public.is_staff());
+create policy "staff update customers" on public.customers for update to app_user using (public.is_staff());
+create policy "admin delete customers" on public.customers for delete to app_user using (public.has_role(public.current_user_id(),'admin'));
 
 create or replace function public.my_customer_ids()
 returns setof uuid language sql stable security definer set search_path = public as $$
-  select id from public.customers where user_id = auth.uid()
+  select id from public.customers where user_id = public.current_user_id()
 $$;
 
 -- PRODUCTS
@@ -118,13 +138,12 @@ create table public.discounts (
 
 do $$ declare t text; begin
   foreach t in array array['products','product_variants','plans','discounts'] loop
-    execute format('grant select, insert, update, delete on public.%I to authenticated', t);
-    execute format('grant all on public.%I to service_role', t);
+    execute format('grant select, insert, update, delete on public.%I to app_user', t);
     execute format('alter table public.%I enable row level security', t);
-    execute format('create policy "auth read %1$s" on public.%1$I for select to authenticated using (true)', t);
-    execute format('create policy "staff insert %1$s" on public.%1$I for insert to authenticated with check (public.is_staff())', t);
-    execute format('create policy "staff update %1$s" on public.%1$I for update to authenticated using (public.is_staff())', t);
-    execute format('create policy "admin delete %1$s" on public.%1$I for delete to authenticated using (public.has_role(auth.uid(),''admin''))', t);
+    execute format('create policy "auth read %1$s" on public.%1$I for select to app_user using (true)', t);
+    execute format('create policy "staff insert %1$s" on public.%1$I for insert to app_user with check (public.is_staff())', t);
+    execute format('create policy "staff update %1$s" on public.%1$I for update to app_user using (public.is_staff())', t);
+    execute format('create policy "admin delete %1$s" on public.%1$I for delete to app_user using (public.has_role(public.current_user_id(),''admin''))', t);
   end loop;
 end $$;
 
@@ -194,23 +213,22 @@ create table public.payments (
 
 do $$ declare t text; begin
   foreach t in array array['subscriptions','subscription_lines','invoices','invoice_lines','payments'] loop
-    execute format('grant select, insert, update, delete on public.%I to authenticated', t);
-    execute format('grant all on public.%I to service_role', t);
+    execute format('grant select, insert, update, delete on public.%I to app_user', t);
     execute format('alter table public.%I enable row level security', t);
-    execute format('create policy "staff insert %1$s" on public.%1$I for insert to authenticated with check (public.is_staff())', t);
-    execute format('create policy "staff update %1$s" on public.%1$I for update to authenticated using (public.is_staff())', t);
-    execute format('create policy "admin delete %1$s" on public.%1$I for delete to authenticated using (public.has_role(auth.uid(),''admin''))', t);
+    execute format('create policy "staff insert %1$s" on public.%1$I for insert to app_user with check (public.is_staff())', t);
+    execute format('create policy "staff update %1$s" on public.%1$I for update to app_user using (public.is_staff())', t);
+    execute format('create policy "admin delete %1$s" on public.%1$I for delete to app_user using (public.has_role(public.current_user_id(),''admin''))', t);
   end loop;
 end $$;
-create policy "read subscriptions" on public.subscriptions for select to authenticated
+create policy "read subscriptions" on public.subscriptions for select to app_user
   using (public.is_staff() or customer_id in (select public.my_customer_ids()));
-create policy "read subscription_lines" on public.subscription_lines for select to authenticated
+create policy "read subscription_lines" on public.subscription_lines for select to app_user
   using (public.is_staff() or subscription_id in (select id from public.subscriptions where customer_id in (select public.my_customer_ids())));
-create policy "read invoices" on public.invoices for select to authenticated
+create policy "read invoices" on public.invoices for select to app_user
   using (public.is_staff() or customer_id in (select public.my_customer_ids()));
-create policy "read invoice_lines" on public.invoice_lines for select to authenticated
+create policy "read invoice_lines" on public.invoice_lines for select to app_user
   using (public.is_staff() or invoice_id in (select id from public.invoices where customer_id in (select public.my_customer_ids())));
-create policy "read payments" on public.payments for select to authenticated
+create policy "read payments" on public.payments for select to app_user
   using (public.is_staff() or invoice_id in (select id from public.invoices where customer_id in (select public.my_customer_ids())));
 
 -- payment validation + invoice status sync
@@ -277,7 +295,7 @@ begin
   if v_disc > 0 then update public.discounts set used_count = used_count + 1 where id = s.discount_id; end if;
   return v_inv;
 end $$;
-revoke execute on function public._bill_subscription(uuid, date, date) from public, anon, authenticated;
+revoke execute on function public._bill_subscription(uuid, date, date) from public, app_user;
 
 create or replace function public.run_billing()
 returns int language plpgsql security definer set search_path = public as $$
@@ -295,89 +313,5 @@ begin
   end loop;
   return n;
 end $$;
-revoke execute on function public.run_billing() from public, anon;
-grant execute on function public.run_billing() to authenticated;
-
--- ===== SEED =====
-insert into public.customers (name, email, phone, company, address) values
- ('Demo Customer','customer@brightloop.demo','+1 555 0100','Northwind Labs','12 Harbor St, Boston'),
- ('Aarav Mehta','aarav@finlytic.io','+91 98200 11223','Finlytic','Bandra, Mumbai'),
- ('Sofia Rossi','sofia@lumenarch.it','+39 02 5551 2233','Lumen Architects','Milan, Italy'),
- ('Liam Carter','liam@peakfit.co','+1 555 0144','PeakFit','Denver, CO'),
- ('Hana Sato','hana@kumo.jp','+81 3 5550 1212','Kumo Studio','Shibuya, Tokyo'),
- ('Noah Fischer','noah@fischerlogistik.de','+49 30 555 7788','Fischer Logistik','Berlin'),
- ('Emma Dubois','emma@verdant.fr','+33 1 55 66 77','Verdant Foods','Lyon, France'),
- ('Oliver Grant','oliver@grantlaw.co.uk','+44 20 5555 0101','Grant & Co Legal','London'),
- ('Priya Nair','priya@medisync.health','+91 99000 44556','MediSync','Bengaluru'),
- ('Lucas Silva','lucas@ondamarket.br','+55 11 5555 3030','Onda Market','São Paulo');
-
-insert into public.products (name, type, sales_price, cost_price) values
- ('Brightloop CRM','software',49,8),('Analytics Suite','software',99,15),('Cloud Storage','service',19,4),
- ('Priority Support','service',29,10),('Onboarding Package','service',199,60),('API Access','software',59,9);
-insert into public.product_variants (product_id, name, extra_price)
-select id, v.n, v.p from public.products pr cross join lateral (values ('Standard',0::numeric),('Pro',30::numeric),('Enterprise',90::numeric)) v(n,p)
-where pr.name in ('Brightloop CRM','Analytics Suite');
-insert into public.product_variants (product_id, name, extra_price)
-select id, v.n, v.p from public.products pr cross join lateral (values ('100 GB',0::numeric),('1 TB',25::numeric)) v(n,p) where pr.name = 'Cloud Storage';
-
-insert into public.plans (name, billing_period, min_quantity, start_date, auto_close, closable, pausable, renewable) values
- ('Starter Monthly','monthly',1,'2025-01-01',false,true,true,true),
- ('Growth Monthly','monthly',5,'2025-01-01',false,true,true,true),
- ('Enterprise Annual','yearly',10,'2025-01-01',false,false,false,true),
- ('Weekly Flex','weekly',1,'2025-06-01',true,true,true,false);
-
-insert into public.discounts (code, name, type, value, expires_on, usage_limit) values
- ('WELCOME10','Welcome 10%','percentage',10,current_date + 120, 50),
- ('LOYAL50','Loyalty $50 off','fixed',50,current_date + 365, 100),
- ('SPRING20','Spring promo 20%','percentage',20,current_date - 10, 20);
-
-do $$
-declare
-  c uuid[]; pl record; sid uuid; i int; st subscription_status; sd date; plan_names text[] := array['Starter Monthly','Growth Monthly','Starter Monthly','Enterprise Annual','Growth Monthly','Starter Monthly','Weekly Flex','Growth Monthly','Starter Monthly','Growth Monthly','Starter Monthly','Enterprise Annual','Starter Monthly','Growth Monthly'];
-  statuses subscription_status[] := array['active','active','active','active','active','active','active','active','paused','closed','quotation','confirmed','draft','active']::subscription_status[];
-  months int[] := array[7,6,6,5,5,4,1,3,5,7,0,0,0,2];
-  prod record; qty int;
-begin
-  select array_agg(id order by created_at, name) into c from public.customers;
-  for i in 1..14 loop
-    select * into pl from public.plans where name = plan_names[i];
-    st := statuses[i];
-    sd := (date_trunc('month', current_date) - make_interval(months => months[i]))::date + ((i % 5));
-    if pl.billing_period = 'weekly' then sd := current_date - 28; end if;
-    insert into public.subscriptions (customer_id, plan_id, status, start_date, expiry_date, payment_terms_days, tax_rate, discount_id)
-    values (c[((i-1) % 10) + 1], pl.id, st, sd, case when st = 'closed' then current_date - 20 else sd + 365 * 2 end,
-            case when i % 3 = 0 then 30 else 15 end, 18,
-            case when i in (2,8) then (select id from public.discounts where code='WELCOME10') when i = 5 then (select id from public.discounts where code='LOYAL50') end)
-    returning id into sid;
-    qty := greatest(pl.min_quantity, (i % 4) + 1);
-    for prod in select p.id, p.sales_price, (select v.id from public.product_variants v where v.product_id = p.id order by v.extra_price desc limit 1 offset (i % 2)) as vid
-                from public.products p where p.name in (case when i % 2 = 0 then 'Analytics Suite' else 'Brightloop CRM' end, 'Priority Support') loop
-      insert into public.subscription_lines (subscription_id, product_id, variant_id, quantity, unit_price)
-      values (sid, prod.id, prod.vid, qty, prod.sales_price + coalesce((select extra_price from public.product_variants where id = prod.vid),0));
-    end loop;
-  end loop;
-end $$;
-
--- historical invoices
-do $$
-declare s record; iv interval; ps date; lim date;
-begin
-  for s in select su.*, p.billing_period from public.subscriptions su join public.plans p on p.id = su.plan_id where su.status in ('active','paused','closed') loop
-    iv := public.period_interval(s.billing_period);
-    ps := s.start_date;
-    lim := case when s.status = 'active' then current_date - 1 else least(coalesce(s.expiry_date, current_date), current_date - 40) end;
-    while ps <= lim and (ps + iv)::date <= current_date + 0 loop
-      perform public._bill_subscription(s.id, ps, ps);
-      ps := (ps + iv)::date;
-    end loop;
-  end loop;
-end $$;
-
--- historical payments (simulated)
-insert into public.payments (invoice_id, amount, method, paid_on, notes, is_demo)
-select id, total, (array['card','bank_transfer','upi','paypal'])[1 + (abs(hashtext(number)) % 4)], least(issue_date + 7, current_date), 'Seeded demo payment', true
-from public.invoices where due_date < current_date - 20 and abs(hashtext(number)) % 7 <> 0;
-insert into public.payments (invoice_id, amount, method, paid_on, notes, is_demo)
-select id, round(total / 2, 2), 'card', current_date - 2, 'Partial demo payment', true
-from public.invoices i where due_date >= current_date - 20 and abs(hashtext(number)) % 3 = 0
-and not exists (select 1 from public.payments p where p.invoice_id = i.id);
+revoke execute on function public.run_billing() from public;
+grant execute on function public.run_billing() to app_user;

@@ -17,7 +17,7 @@ import {
   X,
   UserCircle,
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { signOut as localSignOut } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Role } from "@/lib/auth";
@@ -42,9 +42,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
 
   async function signOut() {
-    const { error } = await supabase.auth.signOut({ scope: "local" });
-    if (error) {
-      toast.error(error.message);
+    try {
+      await localSignOut();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sign out");
       return;
     }
     await qc.cancelQueries();

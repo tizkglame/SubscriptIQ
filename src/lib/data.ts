@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { localDb } from "@/lib/api";
 import { errMsg } from "@/lib/format";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -31,7 +31,7 @@ export function useList<T = any>(
   });
 }
 
-/** Follow every PostgREST page so client-side totals and filters are complete. */
+/** Follow every API page so client-side totals and filters are complete. */
 export async function fetchAllRows<T>(
   queryPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
 ) {
@@ -65,7 +65,11 @@ export function useInvalidate() {
 }
 
 /** Generic save/delete mutation with toasts and cache refresh. */
-export function useAction<V>(fn: (v: V) => Promise<unknown>, success: string, onDone?: () => void) {
+export function useAction<V>(
+  fn: (v: V) => PromiseLike<unknown>,
+  success: string,
+  onDone?: () => void,
+) {
   const inv = useInvalidate();
   return useMutation({
     mutationFn: async (v: V) => {
@@ -90,4 +94,4 @@ function friendly(m: string) {
   return m;
 }
 
-export const db = supabase as any;
+export const db = localDb;

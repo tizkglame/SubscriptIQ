@@ -1,80 +1,103 @@
 # SubscriptIQ
 
-Subscription Management System for Brightloop Software.
+Subscription management for Brightloop Software: catalog, customers, plans, discounts, subscriptions, invoices, offline payments, team roles and a customer portal. Everything runs locally with React, TanStack Router, a Node.js API and PostgreSQL. No cloud account, API keys or `.env` file are needed for the Docker setup.
 
-SubscriptIQ is designed to manage the entire subscription lifecycle for Brightloop, from product catalog setup and customer accounts to billing periods, team role management, and subscription tracking. It brings together admin workflows, staff operations, and customer-facing billing access in a single app built with React, TanStack Start, Supabase, and PostgreSQL.
+## Run with Docker (recommended)
 
-## Demo video
-
-[Watch the project demo](https://drive.google.com/file/d/1YORVE_Ce8KEgYlrShs8OvlYLizQ3uG8L/view?usp=share_link)
-
-## Highlights
-
-- Subscription and renewal tracking for active customers
-- Product catalog management for admins and staff
-- Customer lifecycle management with linked billing accounts
-- Team and role-based access for internal users
-- Billing period generation and offline payment recording
-- Row-level security and protected internal pricing controls
-- Built with a modern TypeScript frontend and PostgreSQL-backed data layer
-
-## Tech stack
-
-- Frontend: React, TypeScript, Vite
-- App framework: TanStack Start
-- Database & auth: Supabase + PostgreSQL
-- ORM/migrations: Drizzle
-- Styling: Tailwind CSS
-- Testing: Vitest, TypeScript checks, database validation scripts
-
-## Local development
-
-Use Node.js 22.13 or later and npm. CI uses `package-lock.json`.
+Install and start [Docker Desktop](https://docs.docker.com/desktop/) or Docker Engine with Compose v2. Then:
 
 ```sh
 git clone https://github.com/tizkglame/SubscriptIQ.git
 cd SubscriptIQ
-cp .env.example .env
+docker compose up --build -d --wait
+```
+
+Open **http://localhost:3000**. The first build downloads the dependencies and container images. Startup waits for PostgreSQL, applies versioned migrations, creates sample accounts and billing data, and checks the API before reporting healthy. Later starts reuse the database volume and do not duplicate sample data.
+
+### Sign in
+
+All three local demo accounts use the password **`LocalDemo123!`**. The sign-in page has buttons to fill these credentials.
+
+| Role     | Email                        | Access                                                                      |
+| -------- | ---------------------------- | --------------------------------------------------------------------------- |
+| Admin    | `admin@subscriptiq.local`    | All operations, delete records, create team and customer accounts           |
+| Staff    | `staff@subscriptiq.local`    | Dashboard, customers, catalog, subscriptions, billing and payment recording |
+| Customer | `customer@subscriptiq.local` | Their own subscriptions, invoices and payment history                       |
+
+The app is bound to the local computer (`127.0.0.1:3000`). PostgreSQL is reachable only inside the Compose network. These sample accounts and fixed database credentials are for local evaluation.
+
+### Everyday commands
+
+```sh
+# Check readiness and logs
+docker compose ps
+docker compose logs --tail=100 app db
+curl http://localhost:3000/api/health
+
+# Stop; keep all database records
+docker compose down
+
+# Restart after pulling code; migrations run automatically
+git pull --ff-only
+docker compose up --build -d --wait
+```
+
+`/api/health` returns `{"status":"ok","database":"ready"}` when the server and database are available. A normal restart keeps accounts, sessions and billing records in the `postgres_data` named volume.
+
+To **delete all local records** and restore a fresh demo:
+
+```sh
+docker compose down --volumes
+docker compose up --build -d --wait
+```
+
+To back up and restore the local database:
+
+```sh
+# Backup before changing or resetting data
+docker compose exec -T db pg_dump -U subscriptiq -d subscriptiq -Fc > subscriptiq.dump
+
+# Restore a backup into the existing local database
+docker compose stop app
+docker compose exec -T db pg_restore -U subscriptiq -d subscriptiq --clean --if-exists < subscriptiq.dump
+docker compose up -d --wait
+```
+
+## Try the features
+
+1. Sign in as admin and explore the populated dashboard.
+2. Create/edit products and variants, billing plans, discounts and customer accounts.
+3. Create a subscription with line items; set its status to **Active** and click **Run billing** on the subscription list.
+4. Open an invoice, print it, and record an offline payment. The balance and invoice status update automatically.
+5. Create an admin/staff account in **Team & Roles**. On **Customers**, use **Enable portal** to create a password for an unlinked customer's local account.
+6. Sign out and use the customer account to view only its own billing history. Staff and customer permissions are also enforced by the API and PostgreSQL.
+
+[Watch the project demo](https://drive.google.com/file/d/1YORVE_Ce8KEgYlrShs8OvlYLizQ3uG8L/view?usp=share_link) (recorded before the local-stack conversion; the current setup is described above).
+
+## Develop without the app container
+
+Use Node.js **22.13+** and npm. Docker can run just PostgreSQL while Vite and the API run on your computer:
+
+```sh
 npm ci
+docker compose -f compose.yaml -f compose.dev.yaml up -d --wait db
 npm run dev
 ```
 
-Fill in the Supabase URL and publishable key in `.env`. The `VITE_*` values are public browser configuration. Set the corresponding server values for authenticated server functions. `SUPABASE_SERVICE_ROLE_KEY` and related server variables must be available to trusted backend logic.
+Open **http://localhost:3000**. Vite serves the frontend on 3000 and proxies `/api` to the local Node server on 3001. The API automatically migrates and seeds the database. Stop the app container first if it is already using port 3000: `docker compose stop app`.
 
-## Database and accounts
+An `.env` file is optional. Copy `.env.example` if you need to override `DATABASE_URL`, skip demo initialization (`SEED_DEMO=false` on a fresh database), or set secure cookies when serving through HTTPS. Keep `PORT` unset for development so the API uses 3001. The default database URL matches the development Compose override; it publishes PostgreSQL only at `127.0.0.1:5432`.
 
-Use a Supabase project: the migrations depend on `auth.users`, `auth.uid()` and Supabase roles. Set the direct/session PostgreSQL connection in your environment, then run:
+To use an existing local PostgreSQL installation, create an empty `subscriptiq` database and set `DATABASE_URL`. The database login needs permission to create schemas and the `app_user` role. A previous hosted installation is not migrated in place: use a fresh local database and retain any existing database/backups separately. The migration runner rejects an unrecognized existing schema instead of overwriting it.
+
+For a native production build:
 
 ```sh
-npm run db:migrate
+npm run build
+npm start
 ```
 
-The CLI loads `.env` and applies the migration journal in order. On an existing database whose original SQL was applied outside Drizzle, use its existing migration mechanism to apply only the Drizzle migration files needed for this app.
-
-Apply the audit migration before deploying this app update: the editors require the new `save_subscription`, `save_product` and `list_products` RPCs. The migration revokes access from the three editor roles before forcing an app-level check on `public.user_roles`.
-
-Bootstrap the first admin by creating an individually owned, confirmed user in Supabase Auth, then run this in the Supabase SQL editor with its actual user ID:
-
-```sql
-insert into public.user_roles (user_id, role)
-values ('<auth-user-uuid>', 'admin')
-on conflict (user_id, role) do nothing;
-```
-
-That admin can add team members from Team & Roles. Provision customer users through Supabase Auth and explicitly link each to its billing account:
-
-```sql
-update public.customers set user_id = '<auth-user-uuid>'
-where id = '<customer-uuid>';
-```
-
-Email matching alone does not grant customer access. Row-level security controls records; the staff-only product RPC protects internal cost prices.
-
-## Billing behavior
-
-Run Billing generates all missing due periods for active subscriptions through the expiry date. Period boundaries remain anchored to the original start date, including month ends and leap years.
-
-Payment recording is an offline ledger entry by staff. This app does not charge cards or process payments. The customer portal directs users to billing instead of offering a payment action it cannot complete.
+The Node server serves both the built app and API at **http://localhost:3000**, including direct links to nested pages. `npm run db:migrate` runs database initialization without starting the server.
 
 ## Verification
 
@@ -87,20 +110,50 @@ npm run build
 npm audit
 ```
 
-Database regression tests require an isolated PostgreSQL server whose login has `CREATEDB` and permission to create the test roles:
+Run database and API integration tests against the local development database server:
 
 ```sh
-TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm run test:db
+TEST_DATABASE_URL=postgres://subscriptiq:subscriptiq@127.0.0.1:5432/postgres npm run test:db
+TEST_DATABASE_URL=postgres://subscriptiq:subscriptiq@127.0.0.1:5432/postgres npm run test:api
 ```
 
-The tests create and drop a uniquely named database, install a minimal Supabase Auth test harness, and exercise real migrations, role policies, rollback, billing and concurrency. Never point them at a production database.
+These tests create and drop their own uniquely named databases. They verify migrations, transactional saves, row permissions, billing concurrency, cookie sessions, account provisioning, API validation, process restarts and production static serving. The server login must have `CREATEDB` and role-creation permissions. Build the frontend before `test:api`.
+
+Alternatively, test using only the running Docker stack:
+
+```sh
+docker compose exec -e TEST_DATABASE_URL=postgres://subscriptiq:subscriptiq@db:5432/postgres app npm run test:db
+docker compose exec -e TEST_DATABASE_URL=postgres://subscriptiq:subscriptiq@db:5432/postgres app npm run test:api
+```
+
+CI runs the frontend, database and API checks, then builds and starts the complete Docker stack and checks port 3000.
+
+## How the local stack works
+
+- **Frontend:** React, TypeScript, Vite, TanStack Router/Query and Tailwind CSS. Fonts are bundled; the app makes no external service requests.
+- **API:** Node.js HTTP server with validated, allowlisted queries and parameterized SQL. No database password is shipped to the browser.
+- **Authentication:** scrypt password hashes and random, database-backed sessions in `HttpOnly`, `SameSite=Lax` cookies. Raw session tokens are never stored in the database or browser storage. The API validates same-origin JSON mutations.
+- **Permissions:** ordinary data queries run as the restricted `app_user` PostgreSQL role with a transaction-local user ID. Row-level security isolates customer records; internal cost prices and team provisioning require staff/admin privileges.
+- **Persistence:** PostgreSQL 17 in a named Docker volume. Migrations in `database/migrations` run once, check their checksums, and preserve data on restart. Add a new migration instead of editing an applied one.
+
+## Billing behavior
+
+**Run billing** generates all missing due periods for active subscriptions through the expiry date. Month-end and leap-year boundaries stay anchored to the original start date. Repeat runs do not duplicate invoices. Overlapping legacy invoice periods produce a reconciliation error. Backfilled invoices use their period start as the issue date and may already be overdue.
+
+Payments are **offline ledger entries** recorded by staff; the app does not charge cards or contact payment providers. Product/variant and subscription/line edits are transactional. Concurrent billing and payments cannot consume a discount twice or overpay an invoice.
+
+## Troubleshooting
+
+- **Cannot connect to the Docker daemon:** start Docker Desktop/Engine, then rerun the Compose command.
+- **Port 3000 already allocated:** stop the previous SubscriptIQ app or other process using that port, then restart. The standard setup always uses 3000.
+- **Database or app unhealthy:** inspect `docker compose logs --tail=100 app db`; check free disk space. Do not remove the database volume unless you intend to reset its data.
+- **Native development cannot connect to PostgreSQL:** start `db` with both Compose files and check `DATABASE_URL`; the default Compose file keeps the database private.
+- **Old demo video or hosted deployment:** this repository now uses a local Node/PostgreSQL stack. Follow this guide instead of the old hosted-service setup.
 
 ## Dependency maintenance
 
-Update `@tanstack/react-start`, `@tanstack/react-router` and `@tanstack/router-plugin` together and regenerate both lockfiles. TanStack Start pins a router version internally; the app and framework must stay aligned.
+Keep `@tanstack/react-router` and `@tanstack/router-plugin` aligned and regenerate `package-lock.json` and `bun.lock` after dependency updates. `npm run check:deps` rejects a second router copy. CI uses npm with peer checks enabled.
 
-The TypeScript toolchain currently uses the supported 6.0.x line. `typescript-eslint@8.72` requires TypeScript `>=4.8.4 <6.1.0`, so Dependabot groups the compiler/parser updates and excludes TypeScript major bumps outside the supported range.
+The TypeScript toolchain uses 6.0.x; the current `typescript-eslint` parser requires TypeScript `<6.1.0`. Dependabot groups the compiler/parser and router updates and holds unsupported compiler releases until parser support is reviewed.
 
-## Project status
-
-This project is focused on subscription operations for Brightloop Software and is structured to support both internal administration and customer-facing billing workflows.
+The repository remains connected to Lovable. Preserve published Git history as described in [AGENTS.md](AGENTS.md). The Docker/Node setup in this guide is the supported way to run the full local application.

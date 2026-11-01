@@ -1,38 +1,62 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { guard, homeFor, loadSession } from "@/lib/auth";
-import { brokeredPreviewStorage } from "@/integrations/supabase/previewAuthStorage";
+import { api, signIn, signOut } from "@/lib/api";
 
-const { getUser, roleQuery } = vi.hoisted(() => ({ getUser: vi.fn(), roleQuery: vi.fn() }));
-vi.mock("@/integrations/supabase/client", () => ({
-  supabase: {
-    auth: { getUser },
-    from: () => ({ select: () => ({ eq: roleQuery }) }),
-  },
-}));
 beforeEach(() => {
-  vi.resetAllMocks();
+  vi.restoreAllMocks();
 });
+function response(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
-describe("session roles and guards", () => {
-  it("requires a verified user", async () => {
-    getUser.mockResolvedValue({ data: { user: null } });
+describe("local sessions and guards", () => {
+  it("returns null without an active cookie session", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(null)));
     expect(await loadSession()).toBeNull();
-    expect(roleQuery).not.toHaveBeenCalled();
   });
-  it.each([
-    [[{ role: "customer" }], "customer"],
-    [[{ role: "staff" }, { role: "admin" }], "admin"],
-    [[{ role: "staff" }], "staff"],
-    [[], "customer"],
-  ])("resolves role priority for %j", async (roles, expected) => {
-    getUser.mockResolvedValue({ data: { user: { id: "user" } } });
-    roleQuery.mockResolvedValue({ data: roles, error: null });
-    expect((await loadSession())?.role).toBe(expected);
+  it.each(["admin", "staff", "customer"])("uses the server-verified %s role", async (role) => {
+    const session = { user: { id: "id", email: "a@example.test" }, role };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(session)));
+    expect(await loadSession()).toEqual(session);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/session",
+      expect.objectContaining({ credentials: "same-origin", method: "GET" }),
+    );
   });
-  it("propagates role lookup failures instead of silently changing account type", async () => {
-    getUser.mockResolvedValue({ data: { user: { id: "user" } } });
-    roleQuery.mockResolvedValue({ data: null, error: new Error("Database unavailable") });
+  it("propagates database failures instead of changing account type", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({ error: { message: "Database unavailable" } }, 500)),
+    );
     await expect(loadSession()).rejects.toThrow("Database unavailable");
+  });
+  it("signs in and out without browser token storage", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() => Promise.resolve(response({ ok: true }))),
+    );
+    const storage = vi.spyOn(Storage.prototype, "setItem");
+    await signIn("admin@subscriptiq.local", "LocalDemo123!");
+    await signOut();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/login",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/auth/logout",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(storage).not.toHaveBeenCalled();
+  });
+  it("reports invalid credentials", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(response({ error: { message: "Invalid email or password" } }, 401)),
+    );
+    await expect(api("/auth/login", {})).rejects.toThrow("Invalid email or password");
   });
   it("redirects unauthorized roles to their home", () => {
     expect(() => guard(["admin"])({ context: { role: "staff" } })).toThrow();
@@ -40,20 +64,4 @@ describe("session roles and guards", () => {
     expect(() => guard(["admin"])({ context: { role: "admin" } })).not.toThrow();
     expect(homeFor("customer")).toBe("/portal");
   });
-});
-
-it("keeps auth storage functional when the browser denies localStorage", async () => {
-  const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-    throw new DOMException("Denied", "SecurityError");
-  });
-  try {
-    const storage = brokeredPreviewStorage()!;
-    expect(await storage.getItem("session")).toBeNull();
-    await storage.setItem("session", "example-session");
-    expect(await storage.getItem("session")).toBe("example-session");
-    await storage.removeItem("session");
-    expect(await storage.getItem("session")).toBeNull();
-  } finally {
-    get.mockRestore();
-  }
 });

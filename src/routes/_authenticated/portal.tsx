@@ -137,7 +137,7 @@ function CustomerPortalPage() {
     <>
       <PageHeader
         title="Customer Portal"
-        subtitle="Manage your recurring plan, view invoices and settle outstanding balances"
+        subtitle="View your recurring plan, invoices and payment history"
       />
 
       {/* Customer Info & Key Stats Grid */}
@@ -286,7 +286,7 @@ function CustomerPortalPage() {
               <div>
                 <h3 className="font-semibold text-foreground">Invoices & Statements</h3>
                 <p className="text-xs text-muted-foreground">
-                  View billing history and pay unpaid statements
+                  View billing history and outstanding balances
                 </p>
               </div>
               <span className="text-xs text-muted-foreground">

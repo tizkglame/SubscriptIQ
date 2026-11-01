@@ -5,50 +5,33 @@ title: SubscriptIQ
 
 # SubscriptIQ
 
-Subscription management for Brightloop Software, with product catalogs, recurring plans, customer agreements, invoices, offline payment records and role-based access.
+Subscription management for Brightloop Software. The app runs entirely on your computer using React, a Node.js API and PostgreSQL, with no cloud account or API keys.
 
-GitHub Pages hosts this project's documentation. The application uses TanStack Start and Supabase and requires a server runtime and database connection.
+## Run locally
 
-## Project guides
-
-- [Setup, environment variables and account provisioning](https://github.com/tizkglame/SubscriptIQ/blob/main/README.md)
-- [Audit findings and database migration requirements](https://github.com/tizkglame/SubscriptIQ/blob/main/AUDIT.md)
-- [Source code](https://github.com/tizkglame/SubscriptIQ)
-- [CI results](https://github.com/tizkglame/SubscriptIQ/actions/workflows/ci.yml)
-
-## Run the application locally
-
-Use Node.js 22.13 or later. Copy `.env.example` to `.env` and configure the browser and server Supabase connection values described in the setup guide.
+Install Docker Desktop or Docker Engine with Compose v2, then:
 
 ```sh
 git clone https://github.com/tizkglame/SubscriptIQ.git
 cd SubscriptIQ
-cp .env.example .env
-npm ci
-npm run dev
+docker compose up --build -d --wait
 ```
 
-Apply database migrations through the database's existing migration mechanism before deploying the application. Existing databases must not replay the initial migration. The setup guide explains migration order and how to provision the first administrator and link customer accounts.
+Open **http://localhost:3000**. Sign in with `admin@subscriptiq.local`, `staff@subscriptiq.local`, or `customer@subscriptiq.local`. All three sample accounts use `LocalDemo123!`.
 
-## Workspaces
+The database is initialized automatically and stored in a persistent Docker volume. The app is bound to the local computer; sample accounts are intended for local evaluation.
 
-| Role | Features |
-| --- | --- |
-| Admin | Billing operations, catalog and customer management, team provisioning |
-| Staff | Subscriptions, invoices, payment records, catalog and customers |
-| Customer | Linked account, subscription details and billing history |
+## Features
 
-Payment recording is an offline ledger workflow. The application does not charge cards or process payments.
+Admins manage team members and customer portal access. Admins and staff manage customers, products/variants, plans, discounts, subscriptions, invoices and offline payment records. Customers see only their own billing records.
 
-## Verify a checkout
+**Run billing** creates due invoice periods idempotently. Payments are ledger entries; no cards are charged.
 
-```sh
-npm run check:deps
-npm run lint
-npm run typecheck
-npm test
-npm run build
-npm audit
-```
+## Guides and source
 
-Database regression tests also run in CI. Local instructions and the isolated test database requirements are in the setup guide.
+- [Complete running guide, backups, development and tests](https://github.com/tizkglame/SubscriptIQ#readme)
+- [Source code](https://github.com/tizkglame/SubscriptIQ)
+- [Automated checks](https://github.com/tizkglame/SubscriptIQ/actions)
+- [Audit history](https://github.com/tizkglame/SubscriptIQ/blob/main/AUDIT.md)
+
+GitHub Pages serves this documentation. Run the full application with Docker on port 3000.

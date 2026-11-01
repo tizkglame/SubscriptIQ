@@ -1,55 +1,47 @@
--- Apply after 0000_migration. No existing migration or published history is rewritten.
--- NOT VALID preserves legacy rows while enforcing constraints on new writes.
--- Fixed public demo credentials must no longer authorize access, including for
--- already-issued sessions. Keep the auth rows so this migration does not delete users.
-delete from public.user_roles where user_id in
-  (select id from auth.users where email in ('admin@brightloop.demo', 'staff@brightloop.demo', 'customer@brightloop.demo'));
-update public.customers set user_id = null where user_id in
-  (select id from auth.users where email in ('admin@brightloop.demo', 'staff@brightloop.demo', 'customer@brightloop.demo'));
-
+-- Audited billing, permissions and transactional editors.
 alter table public.discounts add constraint discount_percentage_range
-  check (type <> 'percentage' or value <= 100) not valid;
+  check (type <> 'percentage' or value <= 100);
 alter table public.discounts add constraint discount_usage_range
-  check ((usage_limit is null or usage_limit > 0) and used_count >= 0) not valid;
+  check ((usage_limit is null or usage_limit > 0) and used_count >= 0);
 alter table public.plans add constraint plan_date_range
-  check (end_date is null or start_date is null or end_date >= start_date) not valid;
-alter table public.product_variants add constraint variant_price_range check (extra_price >= 0) not valid;
+  check (end_date is null or start_date is null or end_date >= start_date);
+alter table public.product_variants add constraint variant_price_range check (extra_price >= 0);
 alter table public.invoices add constraint invoice_amounts
   check (subtotal >= 0 and discount_amount between 0 and subtotal and tax_amount >= 0
-    and total = subtotal - discount_amount + tax_amount) not valid;
+    and total = subtotal - discount_amount + tax_amount);
 alter table public.invoices add constraint invoice_dates
-  check (period_end >= period_start and due_date >= issue_date) not valid;
+  check (period_end >= period_start and due_date >= issue_date);
 alter table public.payments alter column is_demo set default false;
 alter table public.payments add constraint payment_method
-  check (method in ('card', 'bank_transfer', 'upi', 'paypal', 'cash')) not valid;
+  check (method in ('card', 'bank_transfer', 'upi', 'paypal', 'cash'));
 
 -- Role lookup is private to the current user (or an administrator).
 create or replace function public.has_role(_user_id uuid, _role app_role)
 returns boolean language sql stable security definer set search_path = public as $$
-  select (_user_id = auth.uid() or exists
-    (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin'))
+  select (_user_id = public.current_user_id() or exists
+    (select 1 from public.user_roles where user_id = public.current_user_id() and role = 'admin'))
     and exists (select 1 from public.user_roles where user_id = _user_id and role = _role)
 $$;
-revoke execute on function public.has_role(uuid, app_role) from public, anon;
-grant execute on function public.has_role(uuid, app_role) to authenticated;
+revoke execute on function public.has_role(uuid, app_role) from public;
+grant execute on function public.has_role(uuid, app_role) to app_user;
 
 -- Customers can inspect catalog records only for their own subscriptions.
 drop policy "auth read products" on public.products;
-create policy "read products" on public.products for select to authenticated using
+create policy "read products" on public.products for select to app_user using
   (public.is_staff() or id in (select product_id from public.subscription_lines));
 drop policy "auth read product_variants" on public.product_variants;
-create policy "read product_variants" on public.product_variants for select to authenticated using
+create policy "read product_variants" on public.product_variants for select to app_user using
   (public.is_staff() or id in (select variant_id from public.subscription_lines));
 drop policy "auth read plans" on public.plans;
-create policy "read plans" on public.plans for select to authenticated using
+create policy "read plans" on public.plans for select to app_user using
   (public.is_staff() or id in (select plan_id from public.subscriptions));
 drop policy "auth read discounts" on public.discounts;
-create policy "read discounts" on public.discounts for select to authenticated using
+create policy "read discounts" on public.discounts for select to app_user using
   (public.is_staff() or id in (select discount_id from public.subscriptions));
 
 -- RLS controls rows, not columns. Product costs require a separate staff RPC.
-revoke select on public.products from authenticated;
-grant select(id, name, type, sales_price, created_at) on public.products to authenticated;
+revoke select on public.products from app_user;
+grant select(id, name, type, sales_price, created_at) on public.products to app_user;
 create or replace function public.list_products()
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 begin
@@ -59,11 +51,11 @@ begin
       coalesce((select jsonb_agg(v) from public.product_variants v where v.product_id = p.id), '[]'::jsonb)) as row_data
       from public.products p) catalog), '[]'::jsonb);
 end $$;
-revoke execute on function public.list_products() from public, anon;
-grant execute on function public.list_products() to authenticated;
+revoke execute on function public.list_products() from public;
+grant execute on function public.list_products() to app_user;
 
--- Defaults based on sequences need explicit privileges in a fresh Supabase project.
-grant usage on sequence public.subscription_seq, public.invoice_seq to authenticated, service_role;
+-- Defaults based on sequences need explicit privileges on a fresh local database.
+grant usage on sequence public.subscription_seq, public.invoice_seq to app_user;
 
 create index if not exists subscriptions_customer_idx on public.subscriptions(customer_id);
 create index if not exists subscription_lines_subscription_idx on public.subscription_lines(subscription_id);
@@ -180,8 +172,8 @@ begin
       as l(product_id uuid, variant_id uuid, quantity int, unit_price numeric);
   return sid;
 end $$;
-revoke all on function public.save_subscription(uuid, jsonb, jsonb) from public, anon;
-grant execute on function public.save_subscription(uuid, jsonb, jsonb) to authenticated;
+revoke all on function public.save_subscription(uuid, jsonb, jsonb) from public;
+grant execute on function public.save_subscription(uuid, jsonb, jsonb) to app_user;
 
 create or replace function public.save_product(_id uuid, _data jsonb, _variants jsonb)
 returns uuid language plpgsql security definer set search_path = public as $$
@@ -215,8 +207,8 @@ begin
   end loop;
   return pid;
 end $$;
-revoke all on function public.save_product(uuid, jsonb, jsonb) from public, anon;
-grant execute on function public.save_product(uuid, jsonb, jsonb) to authenticated;
+revoke all on function public.save_product(uuid, jsonb, jsonb) from public;
+grant execute on function public.save_product(uuid, jsonb, jsonb) to app_user;
 
 -- Derive each boundary from the original start date. Repeatedly adding a month
 -- to Jan 31 drifts to the 28th; anchored boundaries recover March 31 instead.
@@ -306,12 +298,12 @@ end $$;
 -- Internal helpers and triggers are never RPC entry points.
 revoke execute on function public.validate_payment(), public.validate_invoice(),
   public.sync_invoice_status(), public.handle_new_user(),
-  public._bill_subscription(uuid, date, date) from public, anon, authenticated;
+  public._bill_subscription(uuid, date, date) from public, app_user;
 
 -- Keep composite writes on the validated transactional RPC path.
-revoke insert, update on public.products, public.product_variants, public.subscriptions from authenticated;
-revoke insert, update, delete on public.subscription_lines from authenticated;
+revoke insert, update on public.products, public.product_variants, public.subscriptions from app_user;
+revoke insert, update, delete on public.subscription_lines from app_user;
 -- Invoices and their line snapshots are generated by the billing function.
-revoke insert, update on public.invoices from authenticated;
-grant update(status) on public.invoices to authenticated;
-revoke insert, update, delete on public.invoice_lines from authenticated;
+revoke insert, update on public.invoices from app_user;
+grant update(status) on public.invoices to app_user;
+revoke insert, update, delete on public.invoice_lines from app_user;

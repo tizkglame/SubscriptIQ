@@ -1,0 +1,43 @@
+name: subscriptiq
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: subscriptiq
+      POSTGRES_PASSWORD: subscriptiq
+      POSTGRES_DB: subscriptiq
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U subscriptiq -d subscriptiq"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgres://subscriptiq:subscriptiq@db:5432/subscriptiq
+      SEED_DEMO: "true"
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+volumes:
+  postgres_data:

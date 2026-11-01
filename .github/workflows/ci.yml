@@ -36,4 +36,15 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       - run: npm run build
+      - run: npm run test:api
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       - run: npm audit --audit-level=moderate
+      - run: docker compose up --build -d --wait --wait-timeout 180
+      - run: node scripts/smoke.mjs
+      - name: Docker logs
+        if: failure()
+        run: docker compose logs --no-color --tail=100
+      - name: Stop Docker stack
+        if: always()
+        run: docker compose down --volumes

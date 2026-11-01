@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
+import { migrate } from "../server/database.mjs";
 
 // Create and drop only our own disposable database; never migrate the supplied DB.
 const connection = process.env.TEST_DATABASE_URL;
@@ -23,27 +23,9 @@ before(async () => {
   const url = new URL(connection);
   url.pathname = `/${database}`;
   sql = postgres(url.toString(), { max: 6, onnotice: () => {} });
-  await sql.unsafe(`
-    DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-    DO $$ BEGIN CREATE ROLE authenticated NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-    DO $$ BEGIN CREATE ROLE service_role NOLOGIN BYPASSRLS; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-    CREATE SCHEMA auth;
-    CREATE TABLE auth.users(id uuid PRIMARY KEY, email text, raw_user_meta_data jsonb DEFAULT '{}');
-    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS
-      $$ SELECT nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-    GRANT USAGE ON SCHEMA auth, public TO authenticated, anon, service_role;
-    GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated, anon, service_role;
-  `);
-  await sql.unsafe(
-    await readFile(new URL("../drizzle/migrations/0000_migration.sql", import.meta.url), "utf8"),
-  );
-  await sql`INSERT INTO auth.users(id, email) VALUES (${randomUUID()}, 'admin@brightloop.demo')`;
-  await sql`INSERT INTO user_roles(user_id, role) SELECT id, 'admin' FROM auth.users WHERE email = 'admin@brightloop.demo'`;
-  await sql.unsafe(
-    await readFile(new URL("../drizzle/migrations/0001_audit_fixes.sql", import.meta.url), "utf8"),
-  );
-  await sql`INSERT INTO auth.users(id, email) VALUES (${staff}, 'staff@test.invalid'),
-    (${customerUser}, 'customer@test.invalid'), (${otherUser}, 'other@test.invalid')`;
+  await migrate(sql);
+  await sql`INSERT INTO private.users(id, email, full_name, password_hash) VALUES (${staff}, 'staff@test.invalid', 'Staff', 'unused'),
+    (${customerUser}, 'customer@test.invalid', 'Customer', 'unused'), (${otherUser}, 'other@test.invalid', 'Other', 'unused')`;
   await sql`INSERT INTO user_roles(user_id, role) VALUES (${staff}, 'staff')`;
   [customer] =
     await sql`INSERT INTO customers(name, email, user_id) VALUES ('Test', 'test@test.invalid', ${customerUser}) RETURNING *`;
@@ -60,8 +42,8 @@ after(async () => {
 
 function asUser(id, fn) {
   return sql.begin(async (tx) => {
-    await tx`SET LOCAL ROLE authenticated`;
-    await tx`SELECT set_config('request.jwt.claim.sub', ${id}, true)`;
+    await tx`SET LOCAL ROLE app_user`;
+    await tx`SELECT set_config('app.user_id', ${id}, true)`;
     return fn(tx);
   });
 }
@@ -255,9 +237,7 @@ test("discount caps, line validation, plan lifecycle and date rules are enforced
   );
 });
 
-test("demo access is revoked and product costs remain staff-only", async () => {
-  const [demo] = await sql`SELECT id FROM auth.users WHERE email = 'admin@brightloop.demo'`;
-  assert.equal((await sql`SELECT role FROM user_roles WHERE user_id = ${demo.id}`).length, 0);
+test("product costs remain staff-only", async () => {
   assert.equal((await asUser(otherUser, (tx) => tx`SELECT id FROM products`)).length, 0);
   assert.ok(
     (await asUser(customerUser, (tx) => tx`SELECT id, name FROM products`)).some(

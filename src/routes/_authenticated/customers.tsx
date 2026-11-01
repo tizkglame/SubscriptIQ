@@ -24,6 +24,7 @@ import {
 } from "@/components/common";
 import { useList, useAction, db } from "@/lib/data";
 import { guard } from "@/lib/auth";
+import { createCustomerAccount } from "@/lib/api";
 import { z } from "zod";
 import { toast } from "sonner";
 
@@ -62,6 +63,16 @@ function Customers() {
   const t = usePaged(data, filter);
   const [edit, setEdit] = useState<Partial<C> | null>(null);
   const [form, setForm] = useState(empty);
+  const [portal, setPortal] = useState<C | null>(null);
+  const [portalPassword, setPortalPassword] = useState("");
+  const provision = useAction(
+    () => createCustomerAccount({ customerId: portal!.id, password: portalPassword }),
+    "Customer portal account created",
+    () => {
+      setPortal(null);
+      setPortalPassword("");
+    },
+  );
 
   const save = useAction(
     async (v: typeof empty & { id?: string }) => {
@@ -152,6 +163,17 @@ function Customers() {
                     <td className="px-4 py-3 text-xs">
                       {c.user_id ? (
                         <span className="text-success">Linked</span>
+                      ) : role === "admin" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setPortal(c);
+                            setPortalPassword("");
+                          }}
+                        >
+                          Enable portal
+                        </Button>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
@@ -223,6 +245,43 @@ function Customers() {
                 Cancel
               </Button>
               <Button disabled={save.isPending}>Save</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!portal} onOpenChange={(open) => !open && setPortal(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Enable customer portal</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Create a local sign-in for {portal?.email}. This account can only view this customer's
+            subscriptions and invoices.
+          </p>
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              provision.mutate(undefined);
+            }}
+          >
+            <Field label="Initial password">
+              <Input
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                maxLength={128}
+                required
+                value={portalPassword}
+                onChange={(event) => setPortalPassword(event.target.value)}
+              />
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setPortal(null)}>
+                Cancel
+              </Button>
+              <Button disabled={provision.isPending}>Create portal account</Button>
             </DialogFooter>
           </form>
         </DialogContent>

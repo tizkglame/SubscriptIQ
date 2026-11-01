@@ -97,7 +97,19 @@ function Plans() {
   const open = (p?: P) => {
     setEdit(p ?? {});
     setF(
-      p ? { ...blank, ...p, start_date: p.start_date ?? "", end_date: p.end_date ?? "" } : blank,
+      p
+        ? {
+            name: p.name,
+            billing_period: p.billing_period,
+            min_quantity: p.min_quantity,
+            start_date: p.start_date ?? "",
+            end_date: p.end_date ?? "",
+            auto_close: p.auto_close,
+            closable: p.closable,
+            pausable: p.pausable,
+            renewable: p.renewable,
+          }
+        : blank,
     );
   };
   const submit = (e: React.FormEvent) => {

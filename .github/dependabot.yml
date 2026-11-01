@@ -7,7 +7,6 @@ updates:
     groups:
       tanstack-framework:
         patterns:
-          - "@tanstack/react-start"
           - "@tanstack/react-router"
           - "@tanstack/router-plugin"
       typescript-tooling:

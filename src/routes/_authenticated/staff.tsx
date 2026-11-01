@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { ShieldCheck, UserPlus, Info, Loader2, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -32,7 +31,7 @@ import {
   Field,
   tableHead,
 } from "@/components/common";
-import { createStaff } from "@/lib/staff.functions";
+import { createStaff } from "@/lib/api";
 import { useInvalidate, db, readAll } from "@/lib/data";
 import { guard } from "@/lib/auth";
 import { fmtDate, errMsg } from "@/lib/format";
@@ -53,7 +52,7 @@ type TeamMember = {
 
 function StaffPage() {
   const inv = useInvalidate();
-  const createStaffFn = useServerFn(createStaff);
+  const createStaffFn = createStaff;
 
   const { data, isLoading } = useQuery({
     queryKey: ["staff-team-list"],
@@ -132,19 +131,7 @@ function StaffPage() {
       setOpen(false);
       setForm({ fullName: "", email: "", password: "", role: "staff" });
     } catch (e) {
-      const msg = errMsg(e);
-      if (
-        msg.includes("SUPABASE_SERVICE_ROLE_KEY") ||
-        msg.includes("Missing Supabase environment")
-      ) {
-        toast.error("Service role key missing", {
-          description:
-            "Automated account creation requires SUPABASE_SERVICE_ROLE_KEY in .env. You can add users directly via the Supabase Auth Dashboard.",
-          duration: 6000,
-        });
-      } else {
-        toast.error(msg);
-      }
+      toast.error(errMsg(e));
     } finally {
       setBusy(false);
     }

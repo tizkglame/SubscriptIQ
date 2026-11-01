@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { signIn as localSignIn } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field } from "@/components/common";
@@ -43,8 +43,7 @@ function AuthPage() {
     e.preventDefault();
     setBusy("form");
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-      if (error) throw error;
+      await localSignIn(email.trim(), password);
       await finish();
     } catch (error) {
       toast.error(errMsg(error));
@@ -78,12 +77,36 @@ function AuthPage() {
       <div className="flex items-center justify-center p-6">
         <div className="w-full max-w-md">
           <h2 className="text-2xl font-semibold">Welcome back</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Sign in with your credentials.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Sign in to your local workspace.</p>
 
+          <div className="mt-5 rounded-lg border bg-muted/40 p-4 text-sm">
+            <p className="font-medium">Try the local demo</p>
+            <p className="mt-1 text-muted-foreground">
+              Password for all three accounts: <code>LocalDemo123!</code>
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(["admin", "staff", "customer"] as const).map((role) => (
+                <Button
+                  key={role}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEmail(`${role}@subscriptiq.local`);
+                    setPassword("LocalDemo123!");
+                  }}
+                >
+                  {role.charAt(0).toUpperCase() + role.slice(1)}
+                </Button>
+              ))}
+            </div>
+          </div>
           <form onSubmit={signIn} className="mt-6 grid gap-4">
             <Field label="Email">
               <Input
                 type="email"
+                autoComplete="username"
+                aria-label="Email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -92,6 +115,8 @@ function AuthPage() {
             <Field label="Password">
               <Input
                 type="password"
+                autoComplete="current-password"
+                aria-label="Password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
